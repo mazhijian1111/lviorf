@@ -8,6 +8,12 @@
 #include <ros/ros.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <sensor_msgs/Imu.h>
+#include <nav_msgs/Odometry.h>
+#include <geometry_msgs/PoseStamped.h>
+#include <tf/transform_broadcaster.h>
+#include <tf/transform_datatypes.h>
+#include <tf/transform_listener.h>
+
 
 #include "imu_gps_localizer.h"
 
@@ -25,13 +31,16 @@ private:
     void LogGps(const ImuGpsLocalization::GpsPositionDataPtr gps_data);
 
     void ConvertStateToRosTopic(const ImuGpsLocalization::State& state);
+    void ConvertStateToOdometry(const ImuGpsLocalization::State& state,nav_msgs::Odometry& odom_msg);
     
     ros::Subscriber imu_sub_;
     ros::Subscriber gps_position_sub_;
     ros::Publisher state_pub_;
+    ros::Publisher pub_gps_imu_odometry_;
 
     std::ofstream file_state_;
     std::ofstream file_gps_;
+    ImuGpsLocalization::State last_fused_state;
 
     nav_msgs::Path ros_path_;
 
