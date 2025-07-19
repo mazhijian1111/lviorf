@@ -30,8 +30,8 @@ find_package(GTSAM REQUIRED QUIET)
 find_package(Ceres REQUIRED)
 find_package(Boost REQUIRED COMPONENTS timer)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/usr/share/cmake/geographiclib/")
-find_package(GeographicLib REQUIRED)
+# set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/usr/share/cmake/geographiclib/")
+# find_package(GeographicLib REQUIRED)
 
 add_message_files(
   DIRECTORY msg
@@ -67,6 +67,8 @@ catkin_package(
   visualization_msgs
 )
 
+add_subdirectory(third_party/GeographicLib)
+
 # include directories
 include_directories(
   lib
@@ -76,6 +78,7 @@ include_directories(
   ${CERES_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
 	${GTSAM_INCLUDE_DIR}
+  third_party/GeographicLib/include
 )
 
 # link directories
@@ -142,3 +145,16 @@ target_link_libraries(${PROJECT_NAME}_visual_odometry ${catkin_LIBRARIES} ${PCL_
 # Visual Lopp
 add_executable(${PROJECT_NAME}_visual_loop ${visual_loop_files})
 target_link_libraries(${PROJECT_NAME}_visual_loop ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES}) 
+
+
+## GPS-IMU Localization node.
+file(GLOB gps_imu_files
+    "src/gio/*.cpp"
+)
+add_executable(${PROJECT_NAME}_gps_imu_node ${gps_imu_files})
+target_link_libraries(${PROJECT_NAME}_gps_imu_node ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} 
+ glog 
+ libGeographiccc
+ #libGeographic
+)
+
