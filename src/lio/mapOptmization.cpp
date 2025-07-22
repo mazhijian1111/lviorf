@@ -82,6 +82,7 @@ public:
 
     ros::Subscriber subCloud;
     ros::Subscriber subGPS;
+    ros::Subscriber subGPSOdom;
     ros::Subscriber subLoop;
 
     ros::ServiceServer srvSaveMap;
@@ -164,6 +165,12 @@ public:
 
         subCloud = nh.subscribe<lviorf::cloud_info>("lviorf/deskew/cloud_info", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());
         subGPS   = nh.subscribe<sensor_msgs::NavSatFix> (gpsTopic, 200, &mapOptimization::gpsHandler, this, ros::TransportHints().tcpNoDelay());
+        
+        //20250722订阅融合后的激光里程计
+        subGPSOdom = nh.subscribe<nav_msgs::Odometry> ("/gps_imu_odometry", 200, &mapOptimization::gpsOdomHandler, this, ros::TransportHints().tcpNoDelay());
+        
+        
+        
         subLoop  = nh.subscribe<std_msgs::Float64MultiArray>("/lviorf/vins/loop/match_frame", 1, &mapOptimization::loopInfoHandler, this, ros::TransportHints().tcpNoDelay());
 
         srvSaveMap  = nh.advertiseService("lviorf/save_map", &mapOptimization::saveMapService, this);
@@ -272,6 +279,7 @@ public:
         if (!first_gps) {
             first_gps = true;
             gps_trans_.Reset(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude);
+            std::cout<<"GPS init: "<<gpsMsg->latitude<<" "<<gpsMsg->longitude<<" "<<gpsMsg->altitude<<std::endl;
         }
 
         gps_trans_.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, trans_local_[0], trans_local_[1], trans_local_[2]);
@@ -282,9 +290,16 @@ public:
         gps_odom.pose.pose.position.x = trans_local_[0];
         gps_odom.pose.pose.position.y = trans_local_[1];
         gps_odom.pose.pose.position.z = trans_local_[2];
-        gps_odom.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 0.0, 0.0);
+        gps_odom.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 0.0, 0.0); //无姿态
         pubGpsOdom.publish(gps_odom);
         gpsQueue.push_back(gps_odom);
+    }
+
+
+    //20250722增加订阅融合后的gps_imu里程计
+    void gpsOdomHandler(const nav_msgs::OdometryConstPtr& gpsOdomMsg)
+    {
+        gpsQueue.push_back(*gpsOdomMsg);
     }
 
     void pointAssociateToMap(PointType const * const pi, PointType * const po)
@@ -1333,6 +1348,107 @@ public:
         }
     }
 
+    //新的添加GPS因子的机制
+    void addGPSFactorNew()
+    {
+        if (gpsQueue.empty())
+            return;
+
+        // wait for system initialized and settles down
+        if (cloudKeyPoses3D->points.empty())
+            return;
+        else
+        {
+            if (common_lib_->pointDistance(cloudKeyPoses3D->front(), cloudKeyPoses3D->back()) < 5.0)
+                return;
+        }
+        // pose covariance small, no need to correct
+        if (poseCovariance(3,3) < poseCovThreshold && poseCovariance(4,4) < poseCovThreshold)
+            return;
+        
+        while (!gpsQueue.empty())
+        {
+            if (gpsQueue.front().header.stamp.toSec() < timeLaserInfoCur - 0.2)
+            {
+                // message too old
+                gpsQueue.pop_front();
+            }
+            else if (gpsQueue.front().header.stamp.toSec() > timeLaserInfoCur + 0.2)
+            {
+                // message too new
+                break;
+            }else{
+                break;
+            }
+        }
+
+
+        //优化前的位置
+        PointType curLaserPoint;
+        curLaserPoint.x = transformTobeMapped[3];
+        curLaserPoint.y = transformTobeMapped[4];
+        curLaserPoint.z = transformTobeMapped[5];
+        
+        //从gpsQueue中查找与当前激光帧时间最接近的GPS点
+        double CurrLaserTime = timeLaserInfoCur;
+        double minTimeDiff = 1000000;
+        int minIndex = -1;
+        for (int i = 0; i < (int)gpsQueue.size(); ++i)
+        {
+            double timeDiff = abs(gpsQueue[i].header.stamp.toSec() - CurrLaserTime);
+            if (timeDiff < minTimeDiff)
+            {
+                minTimeDiff = timeDiff;
+                minIndex = i;
+            }
+        }
+        
+        
+        if (minIndex == -1)
+          return;
+        
+        PointType curGPSPoint; //当前激光帧最近的的GPS位姿
+        curGPSPoint.x = gpsQueue[minIndex].pose.pose.position.x;
+        curGPSPoint.y = gpsQueue[minIndex].pose.pose.position.y;
+        curGPSPoint.z = gpsQueue[minIndex].pose.pose.position.z;
+
+        // GPS too noisy, skip
+        float noise_x = gpsQueue[minIndex].pose.covariance[0];
+        float noise_y = gpsQueue[minIndex].pose.covariance[7];
+        float noise_z = gpsQueue[minIndex].pose.covariance[14];
+        if (noise_x > gpsCovThreshold || noise_y > gpsCovThreshold)
+            return;
+
+        float gps_x = gpsQueue[minIndex].pose.pose.position.x;
+        float gps_y = gpsQueue[minIndex].pose.pose.position.y;
+        float gps_z = gpsQueue[minIndex].pose.pose.position.z;
+        if (!useGpsElevation)
+        {
+            gps_z = transformTobeMapped[5];
+            noise_z = 0.01;
+        }
+
+        // GPS not properly initialized (0,0,0)
+        if (abs(gps_x) < 1e-6 && abs(gps_y) < 1e-6)
+            return;
+
+        // Add GPS every a few meters
+        if (common_lib_->pointDistance(curLaserPoint, curGPSPoint) < 1.0)
+            return;
+
+        // Add GPS factor
+        gtsam::Vector Vector3(3);
+        Vector3 << max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f);
+        noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
+        gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
+        gtSAMgraph.add(gps_factor);
+
+        std::cout<<"add new GPS factor"<<std::endl;
+
+    }
+
+
+
     void addGPSFactor()
     {
         if (gpsQueue.empty())
@@ -1396,10 +1512,47 @@ public:
                 curGPSPoint.x = gps_x;
                 curGPSPoint.y = gps_y;
                 curGPSPoint.z = gps_z;
-                if (common_lib_->pointDistance(curGPSPoint, lastGPSPoint) < 5.0)
+
+                //两帧GPS位置相差2.0米以上，才添加GPS因子
+                if (common_lib_->pointDistance(curGPSPoint, lastGPSPoint) < 2.0)
                     continue;
                 else
                     lastGPSPoint = curGPSPoint;
+
+
+
+                // /****************20250722*修改**********************/ 
+                // //GPS与估计的激光位姿距离大于2.0m时，则添加GPS因子
+                // //查找与当前激光估计位姿最近的GPS帧
+                // double CurrLaserTime = thisPose6D.time;
+                // double minTimeDiff = 1000000;
+                // int minIndex = -1;
+                // for (int i = 0; i < (int)gpsQueue.size(); ++i)
+                // {
+                //     double timeDiff = abs(gpsQueue[i].header.stamp.toSec() - CurrLaserTime);
+                //     if (timeDiff < minTimeDiff)
+                //     {
+                //         minTimeDiff = timeDiff;
+                //         minIndex = i;
+                //     }
+                // }
+                
+                
+                // if (minIndex == -1)
+                //   continue;
+                
+                // PointType curLaserPoint;
+                // curLaserPoint.x = thisPose6D.x;
+                // curLaserPoint.y = thisPose6D.y;
+                // curLaserPoint.z = thisPose6D.z;
+
+                // PointType curGpsPoint;
+                // curGpsPoint.x = transformTobeMapped[3];
+                // curGpsPoint.y = transformTobeMapped[4];
+                // curGpsPoint.z = transformTobeMapped[5];
+                // if (common_lib_->pointDistance(curLaserPoint, curGpsPoint) < 2.0)
+                //     continue;
+                
 
                 gtsam::Vector Vector3(3);
                 Vector3 << max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f);
@@ -1407,6 +1560,7 @@ public:
                 gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
                 gtSAMgraph.add(gps_factor);
 
+                std::cout<<"add GPS factor"<<std::endl;
                 aLoopIsClosed = true;
                 break;
             }
@@ -1442,7 +1596,8 @@ public:
         addOdomFactor();
 
         // gps factor
-        addGPSFactor();
+        // addGPSFactor();
+        addGPSFactorNew();
 
         // loop factor
         addLoopFactor();

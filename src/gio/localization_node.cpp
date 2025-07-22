@@ -14,6 +14,7 @@ int main (int argc, char** argv) {
     // Initialize ros.
     ros::init(argc, argv, "imu_gps_localization");
     ros::NodeHandle nh;
+    ROS_INFO("\033[1;32m----> IMU GPS Localization Started.\033[0m");
     
     // Initialize localizer.
     LocalizationWrapper localizer(nh);

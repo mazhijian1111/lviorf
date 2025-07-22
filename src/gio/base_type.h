@@ -25,9 +25,9 @@ struct State {
     double timestamp;
     
     Eigen::Vector3d lla;       // WGS84 position.
-    Eigen::Vector3d G_p_I;     // The original point of the IMU frame in the Global frame.
+    Eigen::Vector3d G_p_I;     // The original point of the IMU frame in the Global frame.IMU在全局坐标系中的原点位置
     Eigen::Vector3d G_v_I;     // The velocity original point of the IMU frame in the Global frame.
-    Eigen::Matrix3d G_R_I;     // The rotation from the IMU frame to the Global frame.
+    Eigen::Matrix3d G_R_I;     // The rotation from the IMU frame to the Global frame.IMU在全局坐标系中的旋转矩阵
     Eigen::Vector3d acc_bias;  // The bias of the acceleration sensor.
     Eigen::Vector3d gyro_bias; // The bias of the gyroscope sensor.
 
