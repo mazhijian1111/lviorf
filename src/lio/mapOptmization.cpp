@@ -1348,7 +1348,7 @@ public:
         }
     }
 
-    //新的添加GPS因子的机制
+    //新的添加GPS因子的机制,20250722增加
     void addGPSFactorNew()
     {
         if (gpsQueue.empty())
