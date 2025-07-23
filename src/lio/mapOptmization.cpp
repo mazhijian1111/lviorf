@@ -802,6 +802,7 @@ public:
 
     void updateInitialGuess()
     {
+        // std::cout<<"update Initial Guess"<<std::endl;
         // save current transformation before any processing
         incrementalOdometryAffineFront = trans2Affine3f(transformTobeMapped);
 
@@ -809,6 +810,7 @@ public:
         // initialization
         if (cloudKeyPoses3D->points.empty())
         {
+            std::cout<<"cloudKeyPoses3D initialization"<<std::endl;
             transformTobeMapped[0] = cloudInfo.imuRollInit;
             transformTobeMapped[1] = cloudInfo.imuPitchInit;
             transformTobeMapped[2] = cloudInfo.imuYawInit;
@@ -820,12 +822,16 @@ public:
             return;
         }
 
+        
+
+
         // use vio estimation for pose guess
         static int odomResetId = 0;
         static bool lastVIOTransAvailable = false;
         static Eigen::Affine3f lastVIOTransformation;
         if (cloudInfo.odomVIOAvailable == true && cloudInfo.odomResetId == odomResetId)
         {
+            // std::cout<<"use vio estimation for pose guess"<<std::endl;
             Eigen::Affine3f transBack = pcl::getTransformation(cloudInfo.odomX,    cloudInfo.odomY,     cloudInfo.odomZ, 
                                                                cloudInfo.odomRoll, cloudInfo.odomPitch, cloudInfo.odomYaw);
             if (lastVIOTransAvailable == false)
@@ -853,6 +859,94 @@ public:
             lastVIOTransAvailable = false;
             odomResetId = cloudInfo.odomResetId;
         }
+
+
+
+/************************20250723增加，start************************************ */
+        // //use gio estimation for pose guess
+        // bool is_curr_gio_avilable = true;
+        // static bool lastGIOTransAvailable = false;
+        // static Eigen::Affine3f lastGIOTransformation;
+        // if(gpsQueue.empty())
+        //    is_curr_gio_avilable = false;
+        
+        // while (!gpsQueue.empty())
+        // {
+        //     if (gpsQueue.front().header.stamp.toSec() < timeLaserInfoCur - 0.2)
+        //     {
+        //         // message too old
+        //         gpsQueue.pop_front();
+        //     }
+        //     else if (gpsQueue.front().header.stamp.toSec() > timeLaserInfoCur + 0.2)
+        //     {
+        //         // message too new
+        //         is_curr_gio_avilable = false;
+        //         break;
+        //     }else{
+        //         break;
+        //     }
+        // }
+
+        // //从gpsQueue中查找与当前激光帧时间最接近的GPS点
+        // double CurrLaserTime = timeLaserInfoCur;
+        // double minTimeDiff = 1000000;
+        // int minIndex = -1;
+        // for (int i = 0; i < (int)gpsQueue.size(); ++i)
+        // {
+        //     double timeDiff = abs(gpsQueue[i].header.stamp.toSec() - CurrLaserTime);
+        //     if (timeDiff < minTimeDiff)
+        //     {
+        //         minTimeDiff = timeDiff;
+        //         minIndex = i;
+        //     }
+        // }
+        
+        
+        // if (minIndex == -1 || minTimeDiff > 0.01) //10ms
+        //   is_curr_gio_avilable = false;
+        
+        // PointType curGPSPoint; //当前激光帧最近的的GPS位姿
+        // curGPSPoint.x = gpsQueue[minIndex].pose.pose.position.x;
+        // curGPSPoint.y = gpsQueue[minIndex].pose.pose.position.y;
+        // curGPSPoint.z = gpsQueue[minIndex].pose.pose.position.z;
+
+        // // GPS too noisy, skip
+        // float noise_x = gpsQueue[minIndex].pose.covariance[0];
+        // float noise_y = gpsQueue[minIndex].pose.covariance[7];
+        // float noise_z = gpsQueue[minIndex].pose.covariance[14];
+        // if (noise_x > gpsCovThreshold || noise_y > gpsCovThreshold || noise_z > gpsCovThreshold)
+        //     is_curr_gio_avilable = false;
+
+        // if(is_curr_gio_avilable)
+        // {
+        //     std::cout<<"use gio estimation for pose guess"<<std::endl;
+        //     //这个旋转准确吗？
+        //     Eigen::Quaterniond q(gpsQueue[minIndex].pose.pose.orientation.w, 
+        //                          gpsQueue[minIndex].pose.pose.orientation.x,
+        //                          gpsQueue[minIndex].pose.pose.orientation.y,
+        //                          gpsQueue[minIndex].pose.pose.orientation.z
+        //                          );
+        //     Eigen::Vector3d eulerAngle = q.toRotationMatrix().eulerAngles(2, 1, 0);//返回Vector3d(yaw, pitch, roll)
+        //     Eigen::Affine3f transBack1 = pcl::getTransformation(curGPSPoint.x, curGPSPoint.y, 0.0, 
+        //                                                         cloudInfo.imuRollInit, cloudInfo.imuPitchInit, cloudInfo.imuYawInit);
+        //     if (lastGIOTransAvailable == false)
+        //     {
+        //         lastGIOTransformation = transBack1;
+        //         lastGIOTransAvailable = true;
+        //     } else {
+        //         Eigen::Affine3f transIncre1 = lastGIOTransformation.inverse() * transBack1;
+        //         Eigen::Affine3f transTobe1 = trans2Affine3f(transformTobeMapped);
+        //         Eigen::Affine3f transFinal1 = transTobe1 * transIncre1;
+        //         pcl::getTranslationAndEulerAngles(transFinal1, transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5], 
+        //                                                         transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
+
+        //         lastGIOTransformation = transBack1;
+
+        //         lastImuTransformation = pcl::getTransformation(0, 0, 0, cloudInfo.imuRollInit, cloudInfo.imuPitchInit, cloudInfo.imuYawInit); // save imu before return;
+        //         return;
+        //     }
+        // }
+        /************************20250723增加，end************************************ */
 /*      
         // has bad benifit for LIO
         // use imu pre-integration estimation for pose guess
@@ -888,6 +982,7 @@ public:
         // use imu incremental estimation for pose guess (only rotation)
         if (cloudInfo.imuAvailable == true && imuType)
         {
+            std::cout<<"use imu estimation for pose guess"<<std::endl;
             Eigen::Affine3f transBack = pcl::getTransformation(0, 0, 0, cloudInfo.imuRollInit, cloudInfo.imuPitchInit, cloudInfo.imuYawInit);
             Eigen::Affine3f transIncre = lastImuTransformation.inverse() * transBack;
 
@@ -1351,6 +1446,7 @@ public:
     //新的添加GPS因子的机制,20250722增加
     void addGPSFactorNew()
     {
+        // std::cout<<"start add GPS Factor New"<<std::endl;
         if (gpsQueue.empty())
             return;
 
@@ -1359,12 +1455,12 @@ public:
             return;
         else
         {
-            if (common_lib_->pointDistance(cloudKeyPoses3D->front(), cloudKeyPoses3D->back()) < 5.0)
-                return;
+            // if (common_lib_->pointDistance(cloudKeyPoses3D->front(), cloudKeyPoses3D->back()) < 1.0)
+                // return;
         }
         // pose covariance small, no need to correct
-        if (poseCovariance(3,3) < poseCovThreshold && poseCovariance(4,4) < poseCovThreshold)
-            return;
+        // if (poseCovariance(3,3) < poseCovThreshold && poseCovariance(4,4) < poseCovThreshold)
+        //     return;
         
         while (!gpsQueue.empty())
         {
@@ -1376,7 +1472,7 @@ public:
             else if (gpsQueue.front().header.stamp.toSec() > timeLaserInfoCur + 0.2)
             {
                 // message too new
-                break;
+                return;
             }else{
                 break;
             }
@@ -1433,7 +1529,7 @@ public:
             return;
 
         // Add GPS every a few meters
-        if (common_lib_->pointDistance(curLaserPoint, curGPSPoint) < 1.0)
+        if (common_lib_->pointDistance(curLaserPoint, curGPSPoint) < 0.5)
             return;
 
         // Add GPS factor
@@ -1443,8 +1539,7 @@ public:
         gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
         gtSAMgraph.add(gps_factor);
 
-        std::cout<<"add new GPS factor"<<std::endl;
-
+        // std::cout<<"add new GPS factor successfully!"<<std::endl;
     }
 
 
@@ -1828,7 +1923,7 @@ public:
         static int lastSLAMInfoPubSize = -1;
         if (pubSLAMInfo.getNumSubscribers() != 0)
         {
-            if (lastSLAMInfoPubSize != cloudKeyPoses6D->size())
+            if ((int)lastSLAMInfoPubSize != (int)cloudKeyPoses6D->size())
             {
                 lviorf::cloud_info slamInfo;
                 slamInfo.header.stamp = timeLaserInfoStamp;
