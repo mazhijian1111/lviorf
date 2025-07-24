@@ -161,6 +161,8 @@ public:
 
     ~ImageProjection(){}
 
+
+    //IMU回调函数
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imuMsg)
     {
         sensor_msgs::Imu thisImu = imuConverter(*imuMsg);
@@ -186,20 +188,25 @@ public:
         // cout << "roll: " << imuRoll << ", pitch: " << imuPitch << ", yaw: " << imuYaw << endl << endl;
     }
 
+
+    //里程计回调函数
     void odometryHandler(const nav_msgs::Odometry::ConstPtr& odometryMsg)
     {
         std::lock_guard<std::mutex> lock2(odoLock);
         odomQueue.push_back(*odometryMsg);
     }
 
+    //VIO里程计回调函数
     void odometryVIOHandler(const nav_msgs::Odometry::ConstPtr& odometryMsg)
     {
         std::lock_guard<std::mutex> lock3(odoVIOLock);
         odomVIOQueue.push_back(*odometryMsg);
     }
 
+    //激光点云回调函数
     void cloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     {
+        //检查激光点云是否符合要求
         if (!cachePointCloud(laserCloudMsg))
             return;
 
@@ -217,12 +224,14 @@ public:
     {
         // cache point cloud
         cloudQueue.push_back(*laserCloudMsg);
-        if (cloudQueue.size() <= 2)
+        if (cloudQueue.size() <= 2) //点云数量小于2，无效点云，直接返回
             return false;
 
-        // convert cloud
+        //从队列中取出最早的点云帧
         currentCloudMsg = std::move(cloudQueue.front());
         cloudQueue.pop_front();
+        
+        //根据激光雷达的类型处理点云数据
         if (sensor == SensorType::VELODYNE || sensor == SensorType::LIVOX)
         {
             pcl::moveFromROSMsg(currentCloudMsg, *laserCloudIn);
@@ -338,6 +347,7 @@ public:
         return true;
     }
 
+    //激光点云去畸变
     bool deskewInfo()
     {
         std::lock_guard<std::mutex> lock1(imuLock);
@@ -364,6 +374,8 @@ public:
     {
         cloudInfo.imuAvailable = false;
 
+
+        //确保激光帧前面有IMU帧
         while (!imuQueue.empty())
         {
             if (imuQueue.front().header.stamp.toSec() < timeScanCur - 0.01)
@@ -384,6 +396,7 @@ public:
 
             if (imuType) {
                 // get roll, pitch, and yaw estimation for this scan
+                //取出激光帧前面IMU的RPY，赋值到要发布的点云数据结构上
                 if (currentImuTime <= timeScanCur)
                     imuRPY2rosRPY(&thisImuMsg, &cloudInfo.imuRollInit, &cloudInfo.imuPitchInit, &cloudInfo.imuYawInit);
             }
@@ -391,6 +404,7 @@ public:
             if (currentImuTime > timeScanEnd + 0.01)
                 break;
 
+            //第0帧的IMU积分
             if (imuPointerCur == 0){
                 imuRotX[0] = 0;
                 imuRotY[0] = 0;
@@ -404,8 +418,8 @@ public:
             double angular_x, angular_y, angular_z;
             imuAngular2rosAngular(&thisImuMsg, &angular_x, &angular_y, &angular_z);
 
-            // integrate rotation
-            double timeDiff = currentImuTime - imuTime[imuPointerCur-1];
+            //IMU的旋转角度积分
+            double timeDiff = currentImuTime - imuTime[imuPointerCur-1]; //与上一帧IMU之间的时间差
             imuRotX[imuPointerCur] = imuRotX[imuPointerCur-1] + angular_x * timeDiff;
             imuRotY[imuPointerCur] = imuRotY[imuPointerCur-1] + angular_y * timeDiff;
             imuRotZ[imuPointerCur] = imuRotZ[imuPointerCur-1] + angular_z * timeDiff;
@@ -413,7 +427,7 @@ public:
             ++imuPointerCur;
         }
 
-        --imuPointerCur;
+        --imuPointerCur; //因为在循环的时候，最后++，所以这里要--，才和索引一致
 
         if (imuPointerCur <= 0)
             return;
@@ -421,10 +435,13 @@ public:
         cloudInfo.imuAvailable = true;
     }
 
+    //里程计信息处理
     void odomDeskewInfo()
     {
         cloudInfo.odomAvailable = false;
-        static float sync_diff_time = (imuRate >= 300) ? 0.01 : 0.20;
+        static float sync_diff_time = (imuRate >= 300) ? 0.01 : 0.20; //同步时间差
+
+        //同样，去除当前激光帧前面的里程计数据
         while (!odomQueue.empty())
         {
             if (odomQueue.front().header.stamp.toSec() < timeScanCur - sync_diff_time)
@@ -441,7 +458,7 @@ public:
 
         // get start odometry at the beinning of the scan
         nav_msgs::Odometry startOdomMsg;
-
+        //获取距离激光帧最近的里程计帧
         for (int i = 0; i < (int)odomQueue.size(); ++i)
         {
             startOdomMsg = odomQueue[i];
@@ -459,6 +476,7 @@ public:
         tf::Matrix3x3(orientation).getRPY(roll, pitch, yaw);
 
         // Initial guess used in mapOptimization
+        //给每帧激光数据添加里程计信息
         cloudInfo.initialGuessX = startOdomMsg.pose.pose.position.x;
         cloudInfo.initialGuessY = startOdomMsg.pose.pose.position.y;
         cloudInfo.initialGuessZ = startOdomMsg.pose.pose.position.z;
@@ -475,7 +493,7 @@ public:
             return;
 
         nav_msgs::Odometry endOdomMsg;
-
+        //获取激光帧后面的最近一帧里程计数据
         for (int i = 0; i < (int)odomQueue.size(); ++i)
         {
             endOdomMsg = odomQueue[i];
@@ -486,6 +504,7 @@ public:
                 break;
         }
 
+        //前后两帧里程计的协方差是否一致，如果一致，则认为里程计没有跳变
         if (int(round(startOdomMsg.pose.covariance[0])) != int(round(endOdomMsg.pose.covariance[0])))
             return;
 
@@ -495,7 +514,7 @@ public:
         tf::Matrix3x3(orientation).getRPY(roll, pitch, yaw);
         Eigen::Affine3f transEnd = pcl::getTransformation(endOdomMsg.pose.pose.position.x, endOdomMsg.pose.pose.position.y, endOdomMsg.pose.pose.position.z, roll, pitch, yaw);
 
-        Eigen::Affine3f transBt = transBegin.inverse() * transEnd;
+        Eigen::Affine3f transBt = transBegin.inverse() * transEnd;//前后帧里程计之间的位姿矩阵
 
         float rollIncre, pitchIncre, yawIncre;
         pcl::getTranslationAndEulerAngles(transBt, odomIncreX, odomIncreY, odomIncreZ, rollIncre, pitchIncre, yawIncre);
@@ -503,6 +522,7 @@ public:
         odomDeskewFlag = true;
     }
 
+    //视觉里程计信息处理，只用了视觉里程计的初值
     void odomVIODeskewInfo()
     {
         cloudInfo.odomVIOAvailable = false;
@@ -541,6 +561,7 @@ public:
         tf::Matrix3x3(orientation).getRPY(roll, pitch, yaw);
 
         // Initial guess used in mapOptimization
+        //当前激光帧对应的视觉里程计初值
         cloudInfo.odomX = startOdomMsg.pose.pose.position.x;
         cloudInfo.odomY = startOdomMsg.pose.pose.position.y;
         cloudInfo.odomZ = startOdomMsg.pose.pose.position.z;
@@ -552,7 +573,7 @@ public:
         cloudInfo.odomVIOAvailable = true;
 
         // <!-- lviorf_yjz_lucky_boy -->
-        // may be the more accurate pose is imu pre-integration
+        // may be the more accurate pose is imu pre-integration--IMU预积分更准
         // get end odometry at the end of the scan
         odomVIODeskewFlag = false;
 /* 
@@ -589,6 +610,7 @@ public:
 */
     }
 
+    //加权中值
     void findRotation(double pointTime, float *rotXCur, float *rotYCur, float *rotZCur)
     {
         *rotXCur = 0; *rotYCur = 0; *rotZCur = 0;
@@ -616,6 +638,7 @@ public:
         }
     }
 
+    //赋值成了0
     void findPosition(double relTime, float *posXCur, float *posYCur, float *posZCur)
     {
         *posXCur = 0; *posYCur = 0; *posZCur = 0;
@@ -642,6 +665,7 @@ public:
         float rotXCur, rotYCur, rotZCur;
         findRotation(pointTime, &rotXCur, &rotYCur, &rotZCur);
 
+        //把两帧之间的位置平移当作了0
         float posXCur, posYCur, posZCur;
         findPosition(relTime, &posXCur, &posYCur, &posZCur);
 
@@ -655,6 +679,7 @@ public:
         Eigen::Affine3f transFinal = pcl::getTransformation(posXCur, posYCur, posZCur, rotXCur, rotYCur, rotZCur);
         Eigen::Affine3f transBt = transStartInverse * transFinal;
 
+        //对点进行位姿变换
         PointType newPoint;
         newPoint.x = transBt(0,0) * point->x + transBt(0,1) * point->y + transBt(0,2) * point->z + transBt(0,3);
         newPoint.y = transBt(1,0) * point->x + transBt(1,1) * point->y + transBt(1,2) * point->z + transBt(1,3);
@@ -664,6 +689,7 @@ public:
         return newPoint;
     }
 
+    //对点云进行投影，即去畸变处理
     void projectPointCloud()
     {
         int cloudSize = laserCloudIn->points.size();
@@ -690,12 +716,14 @@ public:
             if (i % point_filter_num != 0)
                 continue;
 
+            //对点云进行了坐标变换，默认了同一帧的两个点之间的位置平移为0，只进行了旋转（取的是IMU旋转）
             thisPoint = deskewPoint(&thisPoint, laserCloudIn->points[i].time);
 
             fullCloud->push_back(thisPoint);
         }
     }
     
+    //发布点云
     void publishClouds()
     {
         cloudInfo.header = cloudHeader;

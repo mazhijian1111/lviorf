@@ -259,6 +259,8 @@ public:
         usleep(100);
     }
 
+
+    //IMU位姿转换
     sensor_msgs::Imu imuConverter(const sensor_msgs::Imu& imu_in)
     {
         sensor_msgs::Imu imu_out = imu_in;
