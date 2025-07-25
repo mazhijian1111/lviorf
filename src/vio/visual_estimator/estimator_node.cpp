@@ -24,10 +24,14 @@ queue<sensor_msgs::PointCloudConstPtr> feature_buf;
 deque<nav_msgs::Odometry> odomQueue;
 odometryRegister *odomRegister;
 
+// global variable saving the GPS odometry
+deque<nav_msgs::Odometry> GPSOdomQueue;
+
 std::mutex m_buf;
 std::mutex m_state;
 std::mutex m_estimator;
 std::mutex m_odom;
+std::mutex m_gps_odom;
 
 double latest_time;
 Eigen::Vector3d tmp_P;
@@ -166,6 +170,14 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr& odom_msg)
     m_odom.unlock();
 }
 
+
+void gps_odom_callback(const nav_msgs::Odometry::ConstPtr& gps_odom_msg)
+{
+    m_gps_odom.lock();
+    GPSOdomQueue.push_back(*gps_odom_msg);
+    m_gps_odom.unlock();
+}
+
 void feature_callback(const sensor_msgs::PointCloudConstPtr &feature_msg)
 {
     if (!init_feature)
@@ -215,6 +227,7 @@ void process()
         lk.unlock();
 
         m_estimator.lock();
+        //使用IMU数据预测当前图像帧时刻的位姿
         for (auto &measurement : measurements)
         {
             auto img_msg = measurement.second;
@@ -261,6 +274,55 @@ void process()
                     //printf("dimu: dt:%f a: %f %f %f w: %f %f %f\n",dt_1, dx, dy, dz, rx, ry, rz);
                 }
             }
+            std::cout<<"imu_frame:"<<estimator.frame_count<<",P:"<<estimator.Ps[estimator.frame_count].transpose()<<",R:"<<estimator.Rs[estimator.frame_count]<<std::endl;
+
+            /*******************************************************************************8 */
+            //gps里程计
+            double img_t = img_msg->header.stamp.toSec();
+            while(!GPSOdomQueue.empty())
+            {
+                if(GPSOdomQueue.front().header.stamp.toSec() < img_t - 0.1)
+                {
+                    GPSOdomQueue.pop_front();
+                }
+                else
+                {
+                    break;
+                }
+            }
+            double minIndex = -1;
+            double minTime = 1e5;
+            for(int i = 0; i < (int)GPSOdomQueue.size(); i++)
+            {
+                if(abs(GPSOdomQueue[i].header.stamp.toSec() - img_t) < minTime)
+                {
+                    minIndex = i;
+                    minTime = abs(GPSOdomQueue[i].header.stamp.toSec() - img_t);
+                }
+            }
+            if(minIndex != -1)
+            {
+                nav_msgs::Odometry GPSOdom = GPSOdomQueue[minIndex];
+                Eigen::Quaterniond q(GPSOdom.pose.pose.orientation.w, GPSOdom.pose.pose.orientation.x, 
+                               GPSOdom.pose.pose.orientation.y, GPSOdom.pose.pose.orientation.z);
+                Eigen::Matrix3d Rwb = q.toRotationMatrix();
+                Eigen::Vector3d Pwb(GPSOdom.pose.pose.position.x, GPSOdom.pose.pose.position.y, GPSOdom.pose.pose.position.z);
+                // std::cout << "GPSOdomQueue.size():" << GPSOdomQueue.size() << std::endl;
+                // std::cout << "GPSOdomQueue[minIndex].header.stamp.toSec():" << GPSOdomQueue[minIndex].header.stamp.toSec() << "img_t:" << img_t << std::endl;
+                std::cout<<"gps_odom_frame:"<<estimator.frame_count<<",P:"<<Pwb.transpose()<<",R:"<<Rwb<<std::endl;
+                // estimator.Ps[estimator.frame_count] = Pwb;
+                // estimator.Rs[estimator.frame_count] = Rwb;
+
+            }
+            /*******************************************************************************8 */
+
+
+
+
+            /******************************************************************************************** */
+
+
+
 
             // 2. VINS Optimization
             // TicToc t_s;
@@ -290,6 +352,13 @@ void process()
             m_odom.lock();
             initialization_info = odomRegister->getOdometry(odomQueue, img_msg->header.stamp.toSec() + estimator.td);
             m_odom.unlock();
+
+            /******************换成gio提供初值会如何？********************** */
+
+
+
+            /************************************************************* */
+
 
 
             estimator.processImage(image, initialization_info, img_msg->header);
@@ -334,6 +403,7 @@ int main(int argc, char **argv)
     ros::Subscriber sub_odom    = n.subscribe("odometry/imu_incremental", 5000, odom_callback);
     ros::Subscriber sub_image   = n.subscribe(PROJECT_NAME + "/vins/feature/feature", 1, feature_callback);
     ros::Subscriber sub_restart = n.subscribe(PROJECT_NAME + "/vins/feature/restart", 1, restart_callback);
+    ros::Subscriber sub_gps_odom= n.subscribe("/gps_imu_odometry", 1, gps_odom_callback);
     if (!USE_LIDAR)
         sub_odom.shutdown();
 

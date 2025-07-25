@@ -209,36 +209,36 @@ void LocalizationWrapper::ConvertStateToRosTopic(const ImuGpsLocalization::State
     // pose.pose.orientation.z = lidar_orientation.z();
     // pose.pose.orientation.w = lidar_orientation.w();
 
-    // 定义欧拉角（以弧度为单位）
-    double roll = 0.0;   // 绕x轴旋转
-    double pitch = 0.0;  // 绕y轴旋转
-    double yaw = 0.0;  // 绕z轴旋转
+    // // 定义欧拉角（以弧度为单位）
+    // double roll = 0.0;   // 绕x轴旋转
+    // double pitch = 0.0;  // 绕y轴旋转
+    // double yaw = 0.0;  // 绕z轴旋转
 
-    double compute_yaw = 0.0;
-    if(ComputeRTbetweenLidarAndGPS(compute_yaw))
-    {
-        yaw = compute_yaw;
-    }else{
-        yaw = -M_PI / 2-0.165;  // 绕z轴旋转
-    }
-    yaw = 0.0;
-    // 将欧拉角转换为旋转矩阵
-    Eigen::Matrix3d rotation_matrix;
-    rotation_matrix = Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()) *
-                      Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) *
-                      Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX());
+    // double compute_yaw = 0.0;
+    // if(ComputeRTbetweenLidarAndGPS(compute_yaw))
+    // {
+    //     yaw = compute_yaw;
+    // }else{
+    //     yaw = -M_PI / 2-0.165;  // 绕z轴旋转
+    // }
+    // yaw = 0.0;
+    // // 将欧拉角转换为旋转矩阵
+    // Eigen::Matrix3d rotation_matrix;
+    // rotation_matrix = Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()) *
+    //                   Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) *
+    //                   Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX());
 
-    Eigen::Vector3d lidar_position1 = rotation_matrix * imu_position;
-    pose.pose.position.x = lidar_position1[0];
-    pose.pose.position.y = lidar_position1[1];
-    pose.pose.position.z = lidar_position1[2];
+    // Eigen::Vector3d lidar_position1 = rotation_matrix * imu_position;
+    // pose.pose.position.x = lidar_position1[0];
+    // pose.pose.position.y = lidar_position1[1];
+    // pose.pose.position.z = lidar_position1[2];
     
     
-    Eigen::Quaterniond lidar_orientation1 = Eigen::Quaterniond(rotation_matrix * G_q_I.toRotationMatrix());
-    pose.pose.orientation.x = lidar_orientation1.x();
-    pose.pose.orientation.y = lidar_orientation1.y();
-    pose.pose.orientation.z = lidar_orientation1.z();
-    pose.pose.orientation.w = lidar_orientation1.w();           
+    // Eigen::Quaterniond lidar_orientation1 = Eigen::Quaterniond(rotation_matrix * G_q_I.toRotationMatrix());
+    // pose.pose.orientation.x = lidar_orientation1.x();
+    // pose.pose.orientation.y = lidar_orientation1.y();
+    // pose.pose.orientation.z = lidar_orientation1.z();
+    // pose.pose.orientation.w = lidar_orientation1.w();           
 
     ros_path_.poses.push_back(pose);
 
@@ -247,19 +247,19 @@ void LocalizationWrapper::ConvertStateToRosTopic(const ImuGpsLocalization::State
     curr_gps_odom.header.frame_id = "map";
     curr_gps_odom.child_frame_id = "gps";
     curr_gps_odom.header.stamp = ros::Time().fromSec(state.timestamp);
-    curr_gps_odom.pose.pose.position.x = lidar_position1[0];
-    curr_gps_odom.pose.pose.position.y = lidar_position1[1];
-    curr_gps_odom.pose.pose.position.z = lidar_position1[2];
-    curr_gps_odom.pose.pose.orientation.x = lidar_orientation1.x();
-    curr_gps_odom.pose.pose.orientation.y = lidar_orientation1.y();
-    curr_gps_odom.pose.pose.orientation.z = lidar_orientation1.z();
-    curr_gps_odom.pose.pose.orientation.w = lidar_orientation1.w();
+    curr_gps_odom.pose.pose.position.x = pose.pose.position.x;
+    curr_gps_odom.pose.pose.position.y = pose.pose.position.y;
+    curr_gps_odom.pose.pose.position.z = pose.pose.position.z;
+    curr_gps_odom.pose.pose.orientation.x = pose.pose.orientation.x;
+    curr_gps_odom.pose.pose.orientation.y = pose.pose.orientation.y;
+    curr_gps_odom.pose.pose.orientation.z = pose.pose.orientation.z;
+    curr_gps_odom.pose.pose.orientation.w = pose.pose.orientation.w;
 
     //协方差
     curr_gps_odom.pose.covariance[0] = state.cov(0, 0);
     curr_gps_odom.pose.covariance[7] = state.cov(1, 1);
     curr_gps_odom.pose.covariance[14] = state.cov(2, 2);
-    
+
 }
 
 void LocalizationWrapper::ConvertStateToOdometry(const ImuGpsLocalization::State& state,nav_msgs::Odometry& odom_msg) {

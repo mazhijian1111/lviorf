@@ -110,6 +110,7 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
         Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
         Ps[j] += dt * Vs[j] + 0.5 * dt * dt * un_acc;
         Vs[j] += dt * un_acc;
+        // std::cout<<"imu_frame:"<<frame_count<<",P:"<<Ps[j].transpose()<<",R:"<<Rs[j]<<std::endl;
     }
     acc_0 = linear_acceleration;
     gyr_0 = angular_velocity;
@@ -710,6 +711,16 @@ void Estimator::optimization()
         problem.AddParameterBlock(para_SpeedBias[i], SIZE_SPEEDBIAS);
         
     }
+
+    /********************20250725：加入gps里程计参数块********************** */
+
+
+
+
+    /********************20250725：加入激光里程计参数块********************** */
+
+
+
 
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
