@@ -4,11 +4,13 @@ using namespace ros;
 using namespace Eigen;
 ros::Publisher pub_odometry, pub_latest_odometry, pub_latest_odometry_ros;
 ros::Publisher pub_path;
+ros::Publisher pub_camera_path;
 ros::Publisher pub_point_cloud, pub_margin_cloud;
 ros::Publisher pub_key_poses;
 ros::Publisher pub_camera_pose;
 ros::Publisher pub_camera_pose_visual;
 nav_msgs::Path path;
+nav_msgs::Path camera_path;
 
 ros::Publisher pub_keyframe_pose;
 ros::Publisher pub_keyframe_point;
@@ -33,6 +35,9 @@ void registerPub(ros::NodeHandle &n)
     pub_keyframe_pose       = n.advertise<nav_msgs::Odometry>               (PROJECT_NAME + "/vins/odometry/keyframe_pose", 1000);
     pub_keyframe_point      = n.advertise<sensor_msgs::PointCloud>          (PROJECT_NAME + "/vins/odometry/keyframe_point", 1000);
     pub_extrinsic           = n.advertise<nav_msgs::Odometry>               (PROJECT_NAME + "/vins/odometry/extrinsic", 1000);
+
+    //20250731 add
+    pub_camera_path = n.advertise<nav_msgs::Path>("/camera_path", 1000);
 
     cameraposevisual.setScale(1);
     cameraposevisual.setLineWidth(0.05);
@@ -169,8 +174,10 @@ void printStatistics(const Estimator &estimator, double t)
 
 void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
 {
+    // std::cout<<"pub vio Odometry 1"<<std::endl;
     if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
     {
+        // std::cout<<"pub vio Odometry 2"<<std::endl;
         nav_msgs::Odometry odometry;
         odometry.header = header;
         odometry.header.frame_id = "vins_world";
@@ -188,6 +195,37 @@ void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
         odometry.twist.twist.linear.y = estimator.Vs[WINDOW_SIZE].y();
         odometry.twist.twist.linear.z = estimator.Vs[WINDOW_SIZE].z();
         pub_odometry.publish(odometry);
+
+
+        //20250731 add
+        // std::cout<<"vio_xyz1: "<<odometry.pose.pose.position.x<<","<<odometry.pose.pose.position.y<<","<<odometry.pose.pose.position.z<<std::endl;
+        // ROS_INFO("vio_xyz: %f,%f,%f",odometry.pose.pose.position.x,odometry.pose.pose.position.y,odometry.pose.pose.position.z);
+        if(estimator.frame_count == WINDOW_SIZE)
+        {
+            std::cout<<"vio_xyz: "<<odometry.pose.pose.position.x<<","<<odometry.pose.pose.position.y<<","<<odometry.pose.pose.position.z<<std::endl;
+            geometry_msgs::PoseStamped pose;
+            pose.header = header;
+            pose.header.frame_id = "vins_world";
+            pose.pose.position.x = estimator.Ps[WINDOW_SIZE].x();
+            pose.pose.position.y = estimator.Ps[WINDOW_SIZE].y();
+            pose.pose.position.z = estimator.Ps[WINDOW_SIZE].z();
+            pose.pose.orientation.x = tmp_Q.x();
+            pose.pose.orientation.y = tmp_Q.y();
+            pose.pose.orientation.z = tmp_Q.z();
+            pose.pose.orientation.w = tmp_Q.w();
+            camera_path.header = header;
+            camera_path.header.frame_id = "vins_world";
+            camera_path.poses.push_back(pose);
+            pub_camera_path.publish(path);
+            // ROS_INFO("vio_xyz: %f,%f,%f",odometry.pose.pose.position.x,odometry.pose.pose.position.y,odometry.pose.pose.position.z);
+        }
+  
+        
+
+
+
+
+
 
         static double path_save_time = -1;
         if (header.stamp.toSec() - path_save_time > 0.5)

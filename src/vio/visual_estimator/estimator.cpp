@@ -110,6 +110,7 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
         Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
         Ps[j] += dt * Vs[j] + 0.5 * dt * dt * un_acc;
         Vs[j] += dt * un_acc;
+        // std::cout<<"g:"<<g.transpose()<<std::endl;
         // std::cout<<"imu_frame:"<<frame_count<<",P:"<<Ps[j].transpose()<<",R:"<<Rs[j]<<std::endl;
     }
     acc_0 = linear_acceleration;
@@ -717,7 +718,7 @@ void Estimator::optimization()
 
 
 
-    /********************20250725：加入激光里程计参数块********************** */
+    /********************20250725：激光里程计参数块结束********************** */
 
 
 
@@ -760,6 +761,17 @@ void Estimator::optimization()
         IMUFactor* imu_factor = new IMUFactor(pre_integrations[j]);
         problem.AddResidualBlock(imu_factor, NULL, para_Pose[i], para_SpeedBias[i], para_Pose[j], para_SpeedBias[j]);
     }
+
+
+    /********************20250725：lidar residual start********************** */
+
+
+
+
+    /********************20250725：lidar residual start********************** */
+
+
+
 
     // Image feature re-projection residual
     int f_m_cnt = 0;

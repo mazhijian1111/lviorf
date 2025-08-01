@@ -17,6 +17,7 @@ ImuGpsLocalizer::ImuGpsLocalizer(const double acc_noise, const double gyro_noise
     gps_processor_ = std::make_unique<GpsProcessor>(I_p_Gps);
 }
 
+//将接受到的IMU数据添加到imu_buffer_中，进行预测和更新
 bool ImuGpsLocalizer::ProcessImuData(const ImuDataPtr imu_data_ptr, State* fused_state) {
     if (!initialized_) {
         initializer_->AddImuData(imu_data_ptr);
@@ -33,6 +34,7 @@ bool ImuGpsLocalizer::ProcessImuData(const ImuDataPtr imu_data_ptr, State* fused
 }
 
 bool ImuGpsLocalizer::ProcessGpsPositionData(const GpsPositionDataPtr gps_data_ptr) {
+    //初始化，将GPS数据添加到initializer_中，进行初始化
     if (!initialized_) {
         if (!initializer_->AddGpsPositionData(gps_data_ptr, &state_)) {
             return false;

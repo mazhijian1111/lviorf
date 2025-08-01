@@ -8,6 +8,8 @@
     <!-- VINS config -->
     <param name="vins_config_file" type="string" value="$(find lviorf)/config/pinhole/kitti_params_camera.yaml" />
 
+    <rosparam command="load" file="$(find lviorf)/config/vlp_gps.yaml" />
+
     <!--- LOAM -->
     <include file="$(find lviorf)/launch/include/module_loam.launch" />
 
@@ -15,7 +17,7 @@
     <!-- <include file="$(find lviorf)/launch/include/module_robot_state_publisher.launch" /> -->
 
     <!--- Run IMU-GPS-fusion-localizer -->
-    <include file="$(find lviorf)/launch/imu_gps_localization.launch" />
+    <!-- <include file="$(find lviorf)/launch/imu_gps_localization.launch" /> -->
     <!-- <param name="acc_noise"       type="double" value="1e-2" />
     <param name="gyro_noise"      type="double" value="1e-4" />
     <param name="acc_bias_noise"  type="double" value="1e-6" />
@@ -28,7 +30,7 @@
     <param name="log_folder"      type="string" value="$(find lviorf)" />
 
     <node name="$(arg project)_gps_imu_node" pkg="$(arg project)" type="$(arg project)_gps_imu_node" output="screen" /> -->
-
+    <node pkg="lviorf" type="lviorf_gpsOdometry" name="lviorf_gpsOdometry" output="screen"/>
     <!--- Run Rviz-->
     <include file="$(find lviorf)/launch/include/module_rviz.launch" />
 

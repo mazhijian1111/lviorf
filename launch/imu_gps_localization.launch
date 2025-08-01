@@ -10,11 +10,21 @@
     <param name="I_p_Gps_y"       type="double" value="0.0" />
     <param name="I_p_Gps_z"       type="double" value="0.0" />
 
+
+    <arg name="initial_GPS_longitude"       type="double" value="8.396601" />
+    <arg name="initial_GPS_latitude"       type="double" value="49.049499" />
+    <arg name="initial_GPS_altitude"       type="double" value="113.058685
+" />
+
+
     <param name="log_folder"      type="string" value="$(find lviorf)" />
 
     <!-- <node name="nmea_topic_driver" pkg="nmea_navsat_driver" type="nmea_topic_driver" output="screen" /> -->
     <node name="$(arg project)_gps_imu_node" pkg="$(arg project)" type="$(arg project)_gps_imu_node" output="screen" />
-
+         <param name="initial_GPS_longitude" value="$(arg initial_GPS_longitude)" />
+         <param name="initial_GPS_latitude" value="$(arg initial_GPS_latitude)" />
+         <param name="initial_GPS_altitude" value="$(arg initial_GPS_altitude)" />
+    </node>
     <!-- <node pkg="rviz" type="rviz" name="rviz" output="screen" 
       args="-d $(find imu_gps_localization)/ros_wrapper/rviz/default.rviz" required="true">
     </node> -->

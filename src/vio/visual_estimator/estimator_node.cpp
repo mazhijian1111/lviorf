@@ -26,6 +26,7 @@ odometryRegister *odomRegister;
 
 // global variable saving the GPS odometry
 deque<nav_msgs::Odometry> GPSOdomQueue;
+nav_msgs::Odometry last_GPSOdom;
 
 std::mutex m_buf;
 std::mutex m_state;
@@ -173,8 +174,36 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr& odom_msg)
 
 void gps_odom_callback(const nav_msgs::Odometry::ConstPtr& gps_odom_msg)
 {
+    //将gps里程计从IMU系转换到相机系
+    Eigen::Vector3d imu_position(gps_odom_msg->pose.pose.position.x,gps_odom_msg->pose.pose.position.y,
+                                gps_odom_msg->pose.pose.position.z); //IMU系下的位置
+    Eigen::Vector3d imu_2_camera_T(1.08, -0.312718, 0.726546);
+    Eigen::Matrix3d imu_2_camera_R;
+    imu_2_camera_R << 0.00781298,  -0.0042792,     0.99996,
+                    -0.999859,   -0.014868,  0.00774856,
+                    0.0148343,    -0.99988, -0.00439476;
+
+    Eigen::Vector3d camera_position = imu_2_camera_R * imu_position + imu_2_camera_T;
+    // pose.pose.position.x = lidar_position[0];
+    // pose.pose.position.y = lidar_position[1];
+    // pose.pose.position.z = lidar_position[2];
+    Eigen::Quaterniond imu_quaternion(gps_odom_msg->pose.pose.orientation.w,gps_odom_msg->pose.pose.orientation.x,
+                                      gps_odom_msg->pose.pose.orientation.y,gps_odom_msg->pose.pose.orientation.z);
+    Eigen::Quaterniond camera_orientation = Eigen::Quaterniond(imu_2_camera_R * imu_quaternion.toRotationMatrix());
+    // pose.pose.orientation.x = lidar_orientation.x();
+    // pose.pose.orientation.y = lidar_orientation.y();
+    // pose.pose.orientation.z = lidar_orientation.z();
+    // pose.pose.orientation.w = lidar_orientation.w();
+    nav_msgs::Odometry gps_odom_msg_in_camera = *gps_odom_msg;
+    gps_odom_msg_in_camera.pose.pose.position.x = camera_position[0];
+    gps_odom_msg_in_camera.pose.pose.position.y = camera_position[1];
+    gps_odom_msg_in_camera.pose.pose.position.z = camera_position[2];
+    gps_odom_msg_in_camera.pose.pose.orientation.x = camera_orientation.x();
+    gps_odom_msg_in_camera.pose.pose.orientation.y = camera_orientation.y();
+    gps_odom_msg_in_camera.pose.pose.orientation.z = camera_orientation.z();
+    gps_odom_msg_in_camera.pose.pose.orientation.w = camera_orientation.w();
     m_gps_odom.lock();
-    GPSOdomQueue.push_back(*gps_odom_msg);
+    GPSOdomQueue.push_back(gps_odom_msg_in_camera);
     m_gps_odom.unlock();
 }
 
@@ -274,7 +303,7 @@ void process()
                     //printf("dimu: dt:%f a: %f %f %f w: %f %f %f\n",dt_1, dx, dy, dz, rx, ry, rz);
                 }
             }
-            std::cout<<"imu_frame:"<<estimator.frame_count<<",P:"<<estimator.Ps[estimator.frame_count].transpose()<<",R:"<<estimator.Rs[estimator.frame_count]<<std::endl;
+            // std::cout<<"imu_frame:"<<estimator.frame_count<<",P:"<<estimator.Ps[estimator.frame_count].transpose()<<",R:"<<estimator.Rs[estimator.frame_count]<<std::endl;
 
             /*******************************************************************************8 */
             //gps里程计
@@ -300,22 +329,39 @@ void process()
                     minTime = abs(GPSOdomQueue[i].header.stamp.toSec() - img_t);
                 }
             }
-            if(minIndex != -1)
+            // std::cout << "minIndex:" << minIndex << ",minTime:" << minTime << std::endl;
+            if(minIndex != -1 && minTime < 0.01)
             {
                 nav_msgs::Odometry GPSOdom = GPSOdomQueue[minIndex];
                 Eigen::Quaterniond q(GPSOdom.pose.pose.orientation.w, GPSOdom.pose.pose.orientation.x, 
                                GPSOdom.pose.pose.orientation.y, GPSOdom.pose.pose.orientation.z);
                 Eigen::Matrix3d Rwb = q.toRotationMatrix();
                 Eigen::Vector3d Pwb(GPSOdom.pose.pose.position.x, GPSOdom.pose.pose.position.y, GPSOdom.pose.pose.position.z);
+                // Pwb = Pwb.transpose();
                 // std::cout << "GPSOdomQueue.size():" << GPSOdomQueue.size() << std::endl;
                 // std::cout << "GPSOdomQueue[minIndex].header.stamp.toSec():" << GPSOdomQueue[minIndex].header.stamp.toSec() << "img_t:" << img_t << std::endl;
-                std::cout<<"gps_odom_frame:"<<estimator.frame_count<<",P:"<<Pwb.transpose()<<",R:"<<Rwb<<std::endl;
+                // std::cout<<"gps_odom_frame:"<<estimator.frame_count<<",P:"<<Pwb.transpose()<<",R:"<<Rwb<<std::endl;
                 // estimator.Ps[estimator.frame_count] = Pwb;
                 // estimator.Rs[estimator.frame_count] = Rwb;
 
+                if(estimator.frame_count == 0)
+                {
+                    // estimator.Vs[estimator.frame_count] = Eigen::Vector3d(0, 0, 0);
+                }
+                else{
+                    Eigen::Vector3d speed = Eigen::Vector3d(0, 0, 0);
+                    double dt = GPSOdom.header.stamp.toSec() - last_GPSOdom.header.stamp.toSec();
+                    speed(0) = (GPSOdom.pose.pose.position.x - last_GPSOdom.pose.pose.position.x) / dt;
+                    speed(1) = (GPSOdom.pose.pose.position.y - last_GPSOdom.pose.pose.position.y) / dt;
+                    speed(2) = (GPSOdom.pose.pose.position.z - last_GPSOdom.pose.pose.position.z) / dt;
+                    // estimator.Vs[estimator.frame_count] = speed;
+
+                }
+
+                last_GPSOdom = GPSOdom;
             }
             /*******************************************************************************8 */
-
+            //重定位/回环检测操作
 
 
 
@@ -376,10 +422,11 @@ void process()
         }
         m_estimator.unlock();
 
+       //更新IMU参数[P,Q,V,ba,bg,a,g]，需要上锁，注意线程安全。这里对应的知识点是4.1.1最后一个公式。
         m_buf.lock();
         m_state.lock();
         if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
-            update();
+            update(); //更新IMU参数[P,Q,V,ba,bg,a,g]
         m_state.unlock();
         m_buf.unlock();
     }
@@ -403,7 +450,14 @@ int main(int argc, char **argv)
     ros::Subscriber sub_odom    = n.subscribe("odometry/imu_incremental", 5000, odom_callback);
     ros::Subscriber sub_image   = n.subscribe(PROJECT_NAME + "/vins/feature/feature", 1, feature_callback);
     ros::Subscriber sub_restart = n.subscribe(PROJECT_NAME + "/vins/feature/restart", 1, restart_callback);
-    ros::Subscriber sub_gps_odom= n.subscribe("/gps_imu_odometry", 1, gps_odom_callback);
+
+    //20250725 add gps odometry
+    ros::Subscriber sub_gps_odom= n.subscribe("/single_gps_odom", 1, gps_odom_callback);
+
+    //回环检测信息
+
+
+
     if (!USE_LIDAR)
         sub_odom.shutdown();
 

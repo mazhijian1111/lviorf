@@ -149,7 +149,12 @@ target_link_libraries(${PROJECT_NAME}_visual_loop ${catkin_LIBRARIES} ${PCL_LIBR
 
 ## GPS-IMU Localization node.
 file(GLOB gps_imu_files
-    "src/gio/*.cpp"
+    "src/gio/gps_processor.cpp"
+    "src/gio/imu_gps_localizer.cpp"
+    "src/gio/imu_processor.cpp"
+    "src/gio/initializer.cpp"
+    "src/gio/localization_node.cpp"
+    "src/gio/localization_wrapper.cpp"
 )
 add_executable(${PROJECT_NAME}_gps_imu_node ${gps_imu_files})
 target_link_libraries(${PROJECT_NAME}_gps_imu_node ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} 
@@ -157,4 +162,8 @@ target_link_libraries(${PROJECT_NAME}_gps_imu_node ${catkin_LIBRARIES} ${PCL_LIB
  libGeographiccc
  #libGeographic
 )
+
+add_executable(${PROJECT_NAME}_gpsOdometry src/gio/simpleGpsOdom.cpp)
+target_link_libraries(${PROJECT_NAME}_gpsOdometry ${catkin_LIBRARIES} libGeographiccc)
+
 

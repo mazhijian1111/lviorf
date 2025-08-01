@@ -79,6 +79,7 @@ public:
 
     ros::Publisher pubSLAMInfo;
     ros::Publisher pubGpsOdom;
+    ros::Publisher pubCurrentPose;
 
     ros::Subscriber subCloud;
     ros::Subscriber subGPS;
@@ -150,6 +151,8 @@ public:
 
     GeographicLib::LocalCartesian gps_trans_;
 
+    geometry_msgs::PoseStamped currentPose;
+
     mapOptimization()
     {
         ISAM2Params parameters;
@@ -167,8 +170,8 @@ public:
         subGPS   = nh.subscribe<sensor_msgs::NavSatFix> (gpsTopic, 200, &mapOptimization::gpsHandler, this, ros::TransportHints().tcpNoDelay());
         
         //20250722订阅融合后的激光里程计
-        subGPSOdom = nh.subscribe<nav_msgs::Odometry> ("/gps_imu_odometry", 200, &mapOptimization::gpsOdomHandler, this, ros::TransportHints().tcpNoDelay());
-        
+        // subGPSOdom = nh.subscribe<nav_msgs::Odometry> ("/gps_imu_odometry", 200, &mapOptimization::gpsOdomHandler, this, ros::TransportHints().tcpNoDelay());
+        subGPSOdom = nh.subscribe<nav_msgs::Odometry> ("/single_gps_odom", 200, &mapOptimization::gpsOdomHandler, this, ros::TransportHints().tcpNoDelay());
         
         
         subLoop  = nh.subscribe<std_msgs::Float64MultiArray>("/lviorf/vins/loop/match_frame", 1, &mapOptimization::loopInfoHandler, this, ros::TransportHints().tcpNoDelay());
@@ -185,6 +188,7 @@ public:
 
         pubSLAMInfo           = nh.advertise<lviorf::cloud_info>("lviorf/mapping/slam_info", 1);
         pubGpsOdom            = nh.advertise<nav_msgs::Odometry> ("lviorf/mapping/gps_odom", 1);
+        pubCurrentPose        = nh.advertise<geometry_msgs::PoseStamped> ("/current_pose", 1);
 
         downSizeFilterSurf.setLeafSize(mappingSurfLeafSize, mappingSurfLeafSize, mappingSurfLeafSize);
         downSizeFilterLocalMapSurf.setLeafSize(surroundingKeyframeMapLeafSize, surroundingKeyframeMapLeafSize, surroundingKeyframeMapLeafSize);
@@ -267,6 +271,11 @@ public:
 
             publishFrames();
         }
+
+        currentPose.header.stamp = ros::Time::now();
+        currentPose.header.frame_id = "map";
+        pubCurrentPose.publish(currentPose); // publish current pose
+
     }
 
     void gpsHandler(const sensor_msgs::NavSatFixConstPtr& gpsMsg)
@@ -434,12 +443,29 @@ public:
       return true;
     }
 
+    void pubCurrentPoseThread()
+    {
+        ros::Rate rate(20);
+        while (ros::ok()){
+            rate.sleep();
+            currentPose.header.stamp = ros::Time::now();
+            currentPose.header.frame_id = "map";
+            pubCurrentPose.publish(currentPose);
+        }
+    }
+
+
+
+
+
     void visualizeGlobalMapThread()
     {
         ros::Rate rate(0.2);
         while (ros::ok()){
             rate.sleep();
             publishGlobalMap();
+
+
         }
 
         if (savePCD == false)
@@ -810,7 +836,7 @@ public:
         // initialization
         if (cloudKeyPoses3D->points.empty())
         {
-            std::cout<<"cloudKeyPoses3D initialization"<<std::endl;
+            // std::cout<<"cloudKeyPoses3D initialization"<<std::endl;
             transformTobeMapped[0] = cloudInfo.imuRollInit;
             transformTobeMapped[1] = cloudInfo.imuPitchInit;
             transformTobeMapped[2] = cloudInfo.imuYawInit;
@@ -848,6 +874,7 @@ public:
                 lastVIOTransformation = transBack;
 
                 lastImuTransformation = pcl::getTransformation(0, 0, 0, cloudInfo.imuRollInit, cloudInfo.imuPitchInit, cloudInfo.imuYawInit); // save imu before return;
+
 /*                 // debug print
                 std::cout << "\033[1m\033[32m" << "VIO predict pose >>> " << transformTobeMapped[3] << " " << transformTobeMapped[4] 
                             << " " << transformTobeMapped[5] << " " << transformTobeMapped[0] << " " << transformTobeMapped[1] 
@@ -861,7 +888,7 @@ public:
         }
 
 
-
+//如果视觉里程计提供初始位姿失败，则启用GPS提供初始位姿
 /************************20250723增加，start************************************ */
         // //use gio estimation for pose guess
         // bool is_curr_gio_avilable = true;
@@ -1406,6 +1433,7 @@ public:
         return value;
     }
 
+    //通过上一帧与当前帧的位姿变化值，判断是否需要添加新的关键帧
     bool saveFrame()
     {
         if (cloudKeyPoses3D->points.empty())
@@ -1427,6 +1455,7 @@ public:
         return true;
     }
 
+    //在上一帧与当前帧之间添加里程计因子
     void addOdomFactor()
     {
         if (cloudKeyPoses3D->points.empty())
@@ -1500,7 +1529,7 @@ public:
         }
         
         
-        if (minIndex == -1)
+        if (minIndex == -1 || minTimeDiff > 0.02)
           return;
         
         PointType curGPSPoint; //当前激光帧最近的的GPS位姿
@@ -1512,6 +1541,7 @@ public:
         float noise_x = gpsQueue[minIndex].pose.covariance[0];
         float noise_y = gpsQueue[minIndex].pose.covariance[7];
         float noise_z = gpsQueue[minIndex].pose.covariance[14];
+        // std::cout<<"noise_x:"<<noise_x<<" noise_y:"<<noise_y<<" noise_z:"<<noise_z<<std::endl;
         if (noise_x > gpsCovThreshold || noise_y > gpsCovThreshold)
             return;
 
@@ -1524,12 +1554,15 @@ public:
             noise_z = 0.01;
         }
 
+        //如果协方差太大
+
+
         // GPS not properly initialized (0,0,0)
         if (abs(gps_x) < 1e-6 && abs(gps_y) < 1e-6)
             return;
 
         // Add GPS every a few meters
-        if (common_lib_->pointDistance(curLaserPoint, curGPSPoint) < 0.5)
+        if (common_lib_->pointDistance(curLaserPoint, curGPSPoint) < 2.0)
             return;
 
         // Add GPS factor
@@ -1613,40 +1646,6 @@ public:
                     continue;
                 else
                     lastGPSPoint = curGPSPoint;
-
-
-
-                // /****************20250722*修改**********************/ 
-                // //GPS与估计的激光位姿距离大于2.0m时，则添加GPS因子
-                // //查找与当前激光估计位姿最近的GPS帧
-                // double CurrLaserTime = thisPose6D.time;
-                // double minTimeDiff = 1000000;
-                // int minIndex = -1;
-                // for (int i = 0; i < (int)gpsQueue.size(); ++i)
-                // {
-                //     double timeDiff = abs(gpsQueue[i].header.stamp.toSec() - CurrLaserTime);
-                //     if (timeDiff < minTimeDiff)
-                //     {
-                //         minTimeDiff = timeDiff;
-                //         minIndex = i;
-                //     }
-                // }
-                
-                
-                // if (minIndex == -1)
-                //   continue;
-                
-                // PointType curLaserPoint;
-                // curLaserPoint.x = thisPose6D.x;
-                // curLaserPoint.y = thisPose6D.y;
-                // curLaserPoint.z = thisPose6D.z;
-
-                // PointType curGpsPoint;
-                // curGpsPoint.x = transformTobeMapped[3];
-                // curGpsPoint.y = transformTobeMapped[4];
-                // curGpsPoint.z = transformTobeMapped[5];
-                // if (common_lib_->pointDistance(curLaserPoint, curGpsPoint) < 2.0)
-                //     continue;
                 
 
                 gtsam::Vector Vector3(3);
@@ -1748,6 +1747,7 @@ public:
         poseCovariance = isam->marginalCovariance(isamCurrentEstimate.size()-1);
 
         // save updated transform
+        //保存优化更新后的位姿
         transformTobeMapped[0] = latestEstimate.rotation().roll();
         transformTobeMapped[1] = latestEstimate.rotation().pitch();
         transformTobeMapped[2] = latestEstimate.rotation().yaw();
@@ -1763,9 +1763,52 @@ public:
         surfCloudKeyFrames.push_back(thisSurfKeyFrame);
 
         // save path for visualization
+        //更新轨迹
         updatePath(thisPose6D);
+
+
+        /***************************20250801：转换全局定位结果******************************** */
+        //利用初始帧的gps坐标在全局坐标系中的位姿，将当前帧的gps坐标转换为全局坐标系下
+        //手动设置一个全局坐标系原点的经纬度，系统启动的第一帧经纬度作为系统建图原点
+        double globalOriginLat = 39.984060;
+        double globalOriginLon = 116.307520;
+        //设置当前帧的gps坐标
+        double currentLat = 39.984060;
+        double currentLon = 116.307520;
+        //将当前帧的gps坐标转换为全局坐标系下
+        double currentX = 0.0;
+        double currentY = 0.0;
+        double currentZ = 0.0;
+        //将当前帧的gps坐标转换为全局坐标系下
+        // gpsToGlobal(currentLat, currentLon, globalOriginLat, globalOriginLon, currentX, currentY, currentZ);
+        //将当前帧的gps坐标转换为全局坐标系下
+        // transformTobeMapped[3] = currentX;
+        // transformTobeMapped[4] = currentY;
+        // transformTobeMapped[5] = currentZ;
+        currentPose.header.stamp = ros::Time().fromSec(timeLaserInfoCur);
+        currentPose.header.frame_id = "map";
+
+        currentPose.pose.position.x = latestEstimate.translation().x();
+        currentPose.pose.position.y = latestEstimate.translation().y();
+        currentPose.pose.position.z = latestEstimate.translation().z();
+        tf::Quaternion q = tf::createQuaternionFromRPY(latestEstimate.rotation().roll(), latestEstimate.rotation().pitch(), latestEstimate.rotation().yaw());
+        currentPose.pose.orientation.x = q.x();
+        currentPose.pose.orientation.y = q.y();
+        currentPose.pose.orientation.z = q.z();
+        currentPose.pose.orientation.w = q.w();
+
+
+
+
+        //发布当前帧的激光定位结果
+        pubCurrentPose.publish(currentPose);
+        /***************************20250801：转换全局定位结果******************************** */
+
+
+
     }
 
+    //如果检测到闭环，则更新关键帧位姿，并更新轨迹
     void correctPoses()
     {
         if (cloudKeyPoses3D->points.empty())
@@ -1816,6 +1859,7 @@ public:
         globalPath.poses.push_back(pose_stamped);
     }
 
+    //发布激光里程计
     void publishOdometry()
     {
         // Publish odometry for ROS (global)
@@ -1835,6 +1879,10 @@ public:
                                                       tf::Vector3(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]));
         tf::StampedTransform trans_odom_to_lidar = tf::StampedTransform(t_odom_to_lidar, timeLaserInfoStamp, odometryFrame, "lidar_link");
         br.sendTransform(trans_odom_to_lidar);
+        // std::cout<<"lio:"<<transformTobeMapped[3]<<" "<<transformTobeMapped[4]<<" "<<transformTobeMapped[5]<<std::endl;
+        ROS_INFO("lio_xyz : %f, %f, %f", transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
+
+
 
         // Publish odometry for ROS (incremental)
         static bool lastIncreOdomPubFlag = false;
@@ -1953,10 +2001,13 @@ int main(int argc, char** argv)
     std::thread loopthread(&mapOptimization::loopClosureThread, &MO);
     std::thread visualizeMapThread(&mapOptimization::visualizeGlobalMapThread, &MO);
 
+    // std::thread CurrentPoseThread(&mapOptimization::pubCurrentPoseThread, &MO);
+
     ros::spin();
 
     loopthread.join();
     visualizeMapThread.join();
+    // CurrentPoseThread.join();
 
     return 0;
 }
