@@ -2,6 +2,8 @@ lviorf:
 
   # Topics
   pointCloudTopic: "points_raw"               # Point cloud data
+  # pointCloudTopic: "/fused_pointcloud"
+
   imuTopic: "imu_raw"                         # IMU data
   odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
   # gpsTopic: "/gps/fix/correctz"               # GPS odometry topic from navsat, see module_navsat.launch file
