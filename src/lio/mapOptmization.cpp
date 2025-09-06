@@ -871,33 +871,39 @@ public:
         Eigen::Vector3f last_pos = lastVIOTransformation.translation();
         double shift_distance = (curr_pos - last_pos).norm();
         std::cout<<"相邻帧视觉里程计距离为："<<shift_distance<<std::endl;
-        if (cloudInfo.odomVIOAvailable == true && cloudInfo.odomResetId == odomResetId)
+        //如果视觉里程计增量小于2.0m，使用lio的初始位姿估计
+        if(shift_distance < 2.0)
         {
-            // std::cout<<"use vio estimation for pose guess"<<std::endl;
-            ROS_INFO("use vio estimation for initial pose guess");
-            // Eigen::Affine3f transBack = pcl::getTransformation(cloudInfo.odomX,    cloudInfo.odomY,     cloudInfo.odomZ, 
-            //                                                    cloudInfo.odomRoll, cloudInfo.odomPitch, cloudInfo.odomYaw);
-            if (lastVIOTransAvailable == false)
+            if (cloudInfo.odomVIOAvailable == true && cloudInfo.odomResetId == odomResetId)
             {
-                lastVIOTransformation = transBack;
-                lastVIOTransAvailable = true;
-            } else {
-                Eigen::Affine3f transIncre = lastVIOTransformation.inverse() * transBack; //视觉变换增量
-                Eigen::Affine3f transTobe = trans2Affine3f(transformTobeMapped);
-                Eigen::Affine3f transFinal = transTobe * transIncre; //变换到全局坐标系下
-                pcl::getTranslationAndEulerAngles(transFinal, transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5], 
-                                                              transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
+                // std::cout<<"use vio estimation for pose guess"<<std::endl;
+                ROS_INFO("use vio estimation for initial pose guess");
+                // Eigen::Affine3f transBack = pcl::getTransformation(cloudInfo.odomX,    cloudInfo.odomY,     cloudInfo.odomZ, 
+                //                                                    cloudInfo.odomRoll, cloudInfo.odomPitch, cloudInfo.odomYaw);
+                if (lastVIOTransAvailable == false)
+                {
+                    lastVIOTransformation = transBack;
+                    lastVIOTransAvailable = true;
+                } else {
+                    Eigen::Affine3f transIncre = lastVIOTransformation.inverse() * transBack; //视觉变换增量
+                    Eigen::Affine3f transTobe = trans2Affine3f(transformTobeMapped);
+                    Eigen::Affine3f transFinal = transTobe * transIncre; //变换到全局坐标系下
+                    pcl::getTranslationAndEulerAngles(transFinal, transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5], 
+                                                                transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
 
-                lastVIOTransformation = transBack;
+                    lastVIOTransformation = transBack;
 
-                lastImuTransformation = pcl::getTransformation(0, 0, 0, cloudInfo.imuRollInit, cloudInfo.imuPitchInit, cloudInfo.imuYawInit); // save imu before return;
+                    lastImuTransformation = pcl::getTransformation(0, 0, 0, cloudInfo.imuRollInit, cloudInfo.imuPitchInit, cloudInfo.imuYawInit); // save imu before return;
 
-                return;
+                    return;
+                }
+            }  else {
+                // ROS_WARN("VINS failure detected.");
+                lastVIOTransAvailable = false;
+                odomResetId = cloudInfo.odomResetId;
             }
-        }  else {
-            // ROS_WARN("VINS failure detected.");
-            lastVIOTransAvailable = false;
-            odomResetId = cloudInfo.odomResetId;
+        }else{
+            lastVIOTransformation = transBack;
         }
     /***********************************************************************************************************/
 
