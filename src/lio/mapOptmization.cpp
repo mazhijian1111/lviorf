@@ -171,7 +171,7 @@ public:
         
         //20250722订阅融合后的激光里程计
         // subGPSOdom = nh.subscribe<nav_msgs::Odometry> ("/gps_imu_odometry", 200, &mapOptimization::gpsOdomHandler, this, ros::TransportHints().tcpNoDelay());
-        subGPSOdom = nh.subscribe<nav_msgs::Odometry> ("/single_gps_odom", 200, &mapOptimization::gpsOdomHandler, this, ros::TransportHints().tcpNoDelay());
+        subGPSOdom = nh.subscribe<nav_msgs::Odometry> ("/gnss_calibrated", 200, &mapOptimization::gpsOdomHandler, this, ros::TransportHints().tcpNoDelay());
         
         
         subLoop  = nh.subscribe<std_msgs::Float64MultiArray>("/lviorf/vins/loop/match_frame", 1, &mapOptimization::loopInfoHandler, this, ros::TransportHints().tcpNoDelay());
@@ -311,6 +311,7 @@ public:
         gpsQueue.push_back(*gpsOdomMsg);
     }
 
+    //将点经过位姿变换，变换到map系下
     void pointAssociateToMap(PointType const * const pi, PointType * const po)
     {
         po->x = transPointAssociateToMap(0,0) * pi->x + transPointAssociateToMap(0,1) * pi->y + transPointAssociateToMap(0,2) * pi->z + transPointAssociateToMap(0,3);
@@ -319,6 +320,7 @@ public:
         po->intensity = pi->intensity;
     }
 
+    //对点云进行位姿变换
     pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn)
     {
         pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
@@ -340,6 +342,7 @@ public:
         return cloudOut;
     }
 
+    //转为gtsam::Pose3格式
     gtsam::Pose3 pclPointTogtsamPose3(PointTypePose thisPoint)
     {
         return gtsam::Pose3(gtsam::Rot3::RzRyRx(double(thisPoint.roll), double(thisPoint.pitch), double(thisPoint.yaw)),
@@ -826,17 +829,21 @@ public:
         pubLoopConstraintEdge.publish(markerArray);
     }
 
+    //更新初始估计
     void updateInitialGuess()
     {
         // std::cout<<"update Initial Guess"<<std::endl;
         // save current transformation before any processing
         incrementalOdometryAffineFront = trans2Affine3f(transformTobeMapped);
 
+    /***********************************************************************************************************/
         static Eigen::Affine3f lastImuTransformation;
+        //1、第一帧，使用IMU的预积分结果作为初始位姿
         // initialization
         if (cloudKeyPoses3D->points.empty())
         {
-            // std::cout<<"cloudKeyPoses3D initialization"<<std::endl;
+            //第一帧，使用IMU的预积分结果
+            ROS_INFO("The first frame, use imu for initial pose guess");
             transformTobeMapped[0] = cloudInfo.imuRollInit;
             transformTobeMapped[1] = cloudInfo.imuPitchInit;
             transformTobeMapped[2] = cloudInfo.imuYawInit;
@@ -847,27 +854,37 @@ public:
             lastImuTransformation = pcl::getTransformation(0, 0, 0, cloudInfo.imuRollInit, cloudInfo.imuPitchInit, cloudInfo.imuYawInit); // save imu before return;
             return;
         }
-
+    /***********************************************************************************************************/
         
 
-
+    /***********************************************************************************************************/
         // use vio estimation for pose guess
+        //2、使用视觉里程计提供初始值
         static int odomResetId = 0;
         static bool lastVIOTransAvailable = false;
         static Eigen::Affine3f lastVIOTransformation;
+        Eigen::Affine3f transBack = pcl::getTransformation(cloudInfo.odomX,    cloudInfo.odomY,     cloudInfo.odomZ, 
+                                                    cloudInfo.odomRoll, cloudInfo.odomPitch, cloudInfo.odomYaw);
+        // std::cout<<"视觉里程计:x:"<<cloudInfo.odomX<<",y:"<<cloudInfo.odomY<<",z:"<<cloudInfo.odomZ<<std::endl;
+        // 1. 计算位置距离（欧几里得距离）
+        Eigen::Vector3f curr_pos = transBack.translation();
+        Eigen::Vector3f last_pos = lastVIOTransformation.translation();
+        double shift_distance = (curr_pos - last_pos).norm();
+        std::cout<<"相邻帧视觉里程计距离为："<<shift_distance<<std::endl;
         if (cloudInfo.odomVIOAvailable == true && cloudInfo.odomResetId == odomResetId)
         {
             // std::cout<<"use vio estimation for pose guess"<<std::endl;
-            Eigen::Affine3f transBack = pcl::getTransformation(cloudInfo.odomX,    cloudInfo.odomY,     cloudInfo.odomZ, 
-                                                               cloudInfo.odomRoll, cloudInfo.odomPitch, cloudInfo.odomYaw);
+            ROS_INFO("use vio estimation for initial pose guess");
+            // Eigen::Affine3f transBack = pcl::getTransformation(cloudInfo.odomX,    cloudInfo.odomY,     cloudInfo.odomZ, 
+            //                                                    cloudInfo.odomRoll, cloudInfo.odomPitch, cloudInfo.odomYaw);
             if (lastVIOTransAvailable == false)
             {
                 lastVIOTransformation = transBack;
                 lastVIOTransAvailable = true;
             } else {
-                Eigen::Affine3f transIncre = lastVIOTransformation.inverse() * transBack;
+                Eigen::Affine3f transIncre = lastVIOTransformation.inverse() * transBack; //视觉变换增量
                 Eigen::Affine3f transTobe = trans2Affine3f(transformTobeMapped);
-                Eigen::Affine3f transFinal = transTobe * transIncre;
+                Eigen::Affine3f transFinal = transTobe * transIncre; //变换到全局坐标系下
                 pcl::getTranslationAndEulerAngles(transFinal, transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5], 
                                                               transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
 
@@ -875,10 +892,6 @@ public:
 
                 lastImuTransformation = pcl::getTransformation(0, 0, 0, cloudInfo.imuRollInit, cloudInfo.imuPitchInit, cloudInfo.imuYawInit); // save imu before return;
 
-/*                 // debug print
-                std::cout << "\033[1m\033[32m" << "VIO predict pose >>> " << transformTobeMapped[3] << " " << transformTobeMapped[4] 
-                            << " " << transformTobeMapped[5] << " " << transformTobeMapped[0] << " " << transformTobeMapped[1] 
-                              << " " << transformTobeMapped[2] << "\033[0m" << std::endl; */
                 return;
             }
         }  else {
@@ -886,10 +899,11 @@ public:
             lastVIOTransAvailable = false;
             odomResetId = cloudInfo.odomResetId;
         }
+    /***********************************************************************************************************/
 
-
-//如果视觉里程计提供初始位姿失败，则启用GPS提供初始位姿
-/************************20250723增加，start************************************ */
+    /***********************************************************************************************************/
+        //如果视觉里程计提供初始位姿失败，则启用GPS提供初始位姿
+        /************************20250723增加，start************************************ */
         // //use gio estimation for pose guess
         // bool is_curr_gio_avilable = true;
         // static bool lastGIOTransAvailable = false;
@@ -974,6 +988,10 @@ public:
         //     }
         // }
         /************************20250723增加，end************************************ */
+    /***********************************************************************************************************/
+
+
+    /***********************************************************************************************************/
 /*      
         // has bad benifit for LIO
         // use imu pre-integration estimation for pose guess
@@ -1006,10 +1024,14 @@ public:
             }
         }
  */
+    /***********************************************************************************************************/
+
+    /***********************************************************************************************************/
         // use imu incremental estimation for pose guess (only rotation)
         if (cloudInfo.imuAvailable == true && imuType)
         {
-            std::cout<<"use imu estimation for pose guess"<<std::endl;
+            // std::cout<<"use imu estimation for pose guess"<<std::endl;
+            ROS_INFO("use imu estimation for initial pose guess");
             Eigen::Affine3f transBack = pcl::getTransformation(0, 0, 0, cloudInfo.imuRollInit, cloudInfo.imuPitchInit, cloudInfo.imuYawInit);
             Eigen::Affine3f transIncre = lastImuTransformation.inverse() * transBack;
 
@@ -1026,6 +1048,7 @@ public:
                           << " " << transformTobeMapped[2] << "\033[0m" << std::endl; */
             return;
         }
+    /***********************************************************************************************************/
     }
 
     void extractForLoopClosure()
@@ -1547,7 +1570,7 @@ public:
 
         float gps_x = gpsQueue[minIndex].pose.pose.position.x;
         float gps_y = gpsQueue[minIndex].pose.pose.position.y;
-        float gps_z = gpsQueue[minIndex].pose.pose.position.z;
+        float gps_z = 0.0;
         if (!useGpsElevation)
         {
             gps_z = transformTobeMapped[5];
@@ -1572,7 +1595,7 @@ public:
         gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
         gtSAMgraph.add(gps_factor);
 
-        // std::cout<<"add new GPS factor successfully!"<<std::endl;
+        std::cout<<"add new GPS factor!"<<std::endl;
     }
 
 
@@ -1641,8 +1664,8 @@ public:
                 curGPSPoint.y = gps_y;
                 curGPSPoint.z = gps_z;
 
-                //两帧GPS位置相差2.0米以上，才添加GPS因子
-                if (common_lib_->pointDistance(curGPSPoint, lastGPSPoint) < 2.0)
+                //两帧GPS位置相差3.0米以上，才添加GPS因子
+                if (common_lib_->pointDistance(curGPSPoint, lastGPSPoint) < 3.0)
                     continue;
                 else
                     lastGPSPoint = curGPSPoint;
@@ -1691,7 +1714,8 @@ public:
 
         // gps factor
         // addGPSFactor();
-        addGPSFactorNew();
+
+        // addGPSFactorNew();
 
         // loop factor
         addLoopFactor();
@@ -1880,7 +1904,7 @@ public:
         tf::StampedTransform trans_odom_to_lidar = tf::StampedTransform(t_odom_to_lidar, timeLaserInfoStamp, odometryFrame, "lidar_link");
         br.sendTransform(trans_odom_to_lidar);
         // std::cout<<"lio:"<<transformTobeMapped[3]<<" "<<transformTobeMapped[4]<<" "<<transformTobeMapped[5]<<std::endl;
-        ROS_INFO("lio_xyz : %f, %f, %f", transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
+        // ROS_INFO("lio_xyz : %f, %f, %f", transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
 
 
 

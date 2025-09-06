@@ -87,6 +87,13 @@ gps:
     manual_gps_init: false                          # if you sure, you can use it. if not, system will init by simpleGpsOdom.
     manual_init_yaw: -1.57                         # unit rad, if you sure, manual_gps_init can be set "true"
 
+init_lla:                              # the initial lla of gps
+    initial_GPS_longitude: 8.396601
+    initial_GPS_latitude: 49.049500
+    initial_GPS_altitude: 113.057571
+
+
+
 #------------------------------------------------------ global map visualization ---------------------------------------------
 
 visualization:

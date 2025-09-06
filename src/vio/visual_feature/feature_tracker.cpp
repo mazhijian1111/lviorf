@@ -35,6 +35,7 @@ FeatureTracker::FeatureTracker()
 
 void FeatureTracker::setMask()
 {
+    //根据相机类型选择掩码
     if(FISHEYE)
         mask = fisheye_mask.clone();
     else
@@ -47,6 +48,7 @@ void FeatureTracker::setMask()
     for (unsigned int i = 0; i < forw_pts.size(); i++)
         cnt_pts_id.push_back(make_pair(track_cnt[i], make_pair(forw_pts[i], ids[i])));
 
+    //根据跟踪次数由大到小进行排序
     sort(cnt_pts_id.begin(), cnt_pts_id.end(), [](const pair<int, pair<cv::Point2f, int>> &a, const pair<int, pair<cv::Point2f, int>> &b)
          {
             return a.first > b.first;
@@ -60,14 +62,15 @@ void FeatureTracker::setMask()
     {
         if (mask.at<uchar>(it.second.first) == 255)
         {
-            forw_pts.push_back(it.second.first);
-            ids.push_back(it.second.second);
-            track_cnt.push_back(it.first);
+            forw_pts.push_back(it.second.first); //特征点的坐标点
+            ids.push_back(it.second.second); //特征点ID
+            track_cnt.push_back(it.first); //特征点跟踪次数
             cv::circle(mask, it.second.first, MIN_DIST, 0, -1);
         }
     }
 }
 
+//加入特征点
 void FeatureTracker::addPoints()
 {
     for (auto &p : n_pts)
@@ -78,12 +81,14 @@ void FeatureTracker::addPoints()
     }
 }
 
+//读取图像
 void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
 {
     cv::Mat img;
     TicToc t_r;
     cur_time = _cur_time;
 
+    //图像均衡化
     if (EQUALIZE)
     {
         cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(3.0, cv::Size(8, 8));
@@ -93,7 +98,8 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
     }
     else
         img = _img;
-
+    
+    //如果图像特征点为空
     if (forw_img.empty())
     {
         prev_img = cur_img = forw_img = img;
@@ -105,6 +111,7 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
 
     forw_pts.clear();
 
+    //光流法跟踪
     if (cur_pts.size() > 0)
     {
         TicToc t_o;
@@ -146,7 +153,7 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
                 cout << "mask type wrong " << endl;
             if (mask.size() != forw_img.size())
                 cout << "wrong size " << endl;
-            cv::goodFeaturesToTrack(forw_img, n_pts, MAX_CNT - forw_pts.size(), 0.01, MIN_DIST, mask);
+            cv::goodFeaturesToTrack(forw_img, n_pts, MAX_CNT - forw_pts.size(), 0.01, MIN_DIST, mask); //补足特征点数量
         }
         else
             n_pts.clear();
@@ -168,6 +175,7 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
 
 void FeatureTracker::rejectWithF()
 {
+    //如果当前图像帧的特征点数量大于8，计算像素点对应的空间坐标
     if (forw_pts.size() >= 8)
     {
         ROS_DEBUG("FM ransac begins");
@@ -176,19 +184,19 @@ void FeatureTracker::rejectWithF()
         for (unsigned int i = 0; i < cur_pts.size(); i++)
         {
             Eigen::Vector3d tmp_p;
-            m_camera->liftProjective(Eigen::Vector2d(cur_pts[i].x, cur_pts[i].y), tmp_p);
+            m_camera->liftProjective(Eigen::Vector2d(cur_pts[i].x, cur_pts[i].y), tmp_p); //上一帧
             tmp_p.x() = FOCAL_LENGTH * tmp_p.x() / tmp_p.z() + COL / 2.0;
             tmp_p.y() = FOCAL_LENGTH * tmp_p.y() / tmp_p.z() + ROW / 2.0;
             un_cur_pts[i] = cv::Point2f(tmp_p.x(), tmp_p.y());
 
-            m_camera->liftProjective(Eigen::Vector2d(forw_pts[i].x, forw_pts[i].y), tmp_p);
+            m_camera->liftProjective(Eigen::Vector2d(forw_pts[i].x, forw_pts[i].y), tmp_p); //当前帧
             tmp_p.x() = FOCAL_LENGTH * tmp_p.x() / tmp_p.z() + COL / 2.0;
             tmp_p.y() = FOCAL_LENGTH * tmp_p.y() / tmp_p.z() + ROW / 2.0;
             un_forw_pts[i] = cv::Point2f(tmp_p.x(), tmp_p.y());
         }
 
         vector<uchar> status;
-        cv::findFundamentalMat(un_cur_pts, un_forw_pts, cv::FM_RANSAC, F_THRESHOLD, 0.99, status);
+        cv::findFundamentalMat(un_cur_pts, un_forw_pts, cv::FM_RANSAC, F_THRESHOLD, 0.99, status); //求基础矩阵
         int size_a = cur_pts.size();
         reduceVector(prev_pts, status);
         reduceVector(cur_pts, status);

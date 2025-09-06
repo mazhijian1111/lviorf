@@ -90,6 +90,8 @@ private:
     double *imuRotY = new double[queueLength];
     double *imuRotZ = new double[queueLength];
 
+    double last_angular_x, last_angular_y, last_angular_z;//上一帧的角速度
+
     int imuPointerCur;
     bool firstPointFlag;
     Eigen::Affine3f transStartInverse;
@@ -120,8 +122,8 @@ public:
         subVIOOdom       = nh.subscribe<nav_msgs::Odometry> ("lviorf/vins/odometry/imu_propagate_ros", 2000, &ImageProjection::odometryVIOHandler, this, ros::TransportHints().tcpNoDelay());
         subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>(pointCloudTopic, 5, &ImageProjection::cloudHandler, this, ros::TransportHints().tcpNoDelay());
 
-        pubExtractedCloud = nh.advertise<sensor_msgs::PointCloud2> ("lviorf/lidar/deskew/cloud_deskewed", 1);
-        pubLaserCloudInfo = nh.advertise<lviorf::cloud_info> ("lviorf/deskew/cloud_info", 1);
+        pubExtractedCloud = nh.advertise<sensor_msgs::PointCloud2> ("lviorf/lidar/deskew/cloud_deskewed", 1); //去除畸变后的点云
+        pubLaserCloudInfo = nh.advertise<lviorf::cloud_info> ("lviorf/deskew/cloud_info", 1); //自定义格式的点云，含有更多的信息
 
         allocateMemory();
         resetParameters();
@@ -144,10 +146,10 @@ public:
         laserCloudIn->clear();
         fullCloud->clear();
 
-        imuPointerCur = 0;
+        imuPointerCur = 0; //IMU指针
         firstPointFlag = true;
         odomDeskewFlag = false;
-        odomVIODeskewFlag = false;
+        odomVIODeskewFlag = false;//视觉里程计去畸变标志
 
         for (int i = 0; i < queueLength; ++i)
         {
@@ -162,7 +164,7 @@ public:
     ~ImageProjection(){}
 
 
-    //IMU回调函数
+    //IMU回调函数，订阅到imu数据帧后存入队列中
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imuMsg)
     {
         sensor_msgs::Imu thisImu = imuConverter(*imuMsg);
@@ -189,27 +191,28 @@ public:
     }
 
 
-    //里程计回调函数
+    //里程计回调函数,存入到odomQueue队列中
     void odometryHandler(const nav_msgs::Odometry::ConstPtr& odometryMsg)
     {
         std::lock_guard<std::mutex> lock2(odoLock);
         odomQueue.push_back(*odometryMsg);
     }
 
-    //VIO里程计回调函数
+    //VIO里程计回调函数，存入到odomVIOQueue队列中
     void odometryVIOHandler(const nav_msgs::Odometry::ConstPtr& odometryMsg)
     {
         std::lock_guard<std::mutex> lock3(odoVIOLock);
         odomVIOQueue.push_back(*odometryMsg);
     }
 
-    //激光点云回调函数
+    //激光点云回调函数，对激光点云进行去畸变处理
     void cloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     {
         //检查激光点云是否符合要求
         if (!cachePointCloud(laserCloudMsg))
             return;
 
+        //去畸变
         if (!deskewInfo())
             return;
 
@@ -220,11 +223,12 @@ public:
         resetParameters();
     }
 
+
     bool cachePointCloud(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     {
-        // cache point cloud
+        // cache point cloud，前面两帧点云都不处理
         cloudQueue.push_back(*laserCloudMsg);
-        if (cloudQueue.size() <= 2) //点云数量小于2，无效点云，直接返回
+        if (cloudQueue.size() <= 2) //点云队列中的点云帧数量小于2，直接返回
             return false;
 
         //从队列中取出最早的点云帧
@@ -296,10 +300,11 @@ public:
             ros::shutdown();
         }
 
-        // get timestamp
+        //点云校验
         cloudHeader = currentCloudMsg.header;
         timeScanCur = cloudHeader.stamp.toSec();
         timeScanEnd = timeScanCur + laserCloudIn->points.back().time;
+        // std::cout<<"当前点云帧开始时间："<<timeScanCur<<",持续时间:"<<laserCloudIn->points.back().time<<std::endl;
 
         // check dense flag
         if (laserCloudIn->is_dense == false)
@@ -329,6 +334,7 @@ public:
         }
 
         // check point time
+        //点的时间校验
         if (deskewFlag == 0)
         {
             deskewFlag = -1;
@@ -340,8 +346,12 @@ public:
                     break;
                 }
             }
-            if (deskewFlag == -1)
-                ROS_WARN("Point cloud timestamp not available, deskew function disabled, system will drift significantly!");
+            if (deskewFlag == -1) //点无时间戳信息
+            {
+                std::cout<<"点云中的点无时间信息"<<std::endl;
+                // ROS_WARN("Point cloud timestamp not available, deskew function disabled, system will drift significantly!");
+                
+            }
         }
 
         return true;
@@ -361,7 +371,7 @@ public:
             return false;
         }
 
-        imuDeskewInfo();
+        imuDeskewInfo();//IMU
 
         odomDeskewInfo();
 
@@ -370,12 +380,13 @@ public:
         return true;
     }
 
+    
     void imuDeskewInfo()
     {
         cloudInfo.imuAvailable = false;
 
 
-        //确保激光帧前面有IMU帧
+        //确保激光帧前面有IMU帧，IMU帧范围：[timeScanCur - 0.01,timeScanEnd + 0.01]
         while (!imuQueue.empty())
         {
             if (imuQueue.front().header.stamp.toSec() < timeScanCur - 0.01)
@@ -410,6 +421,11 @@ public:
                 imuRotY[0] = 0;
                 imuRotZ[0] = 0;
                 imuTime[0] = currentImuTime;
+
+                last_angular_x = thisImuMsg.angular_velocity.x;
+                last_angular_y = thisImuMsg.angular_velocity.y;
+                last_angular_z = thisImuMsg.angular_velocity.z;
+
                 ++imuPointerCur;
                 continue;
             }
@@ -420,10 +436,23 @@ public:
 
             //IMU的旋转角度积分
             double timeDiff = currentImuTime - imuTime[imuPointerCur-1]; //与上一帧IMU之间的时间差
-            imuRotX[imuPointerCur] = imuRotX[imuPointerCur-1] + angular_x * timeDiff;
-            imuRotY[imuPointerCur] = imuRotY[imuPointerCur-1] + angular_y * timeDiff;
-            imuRotZ[imuPointerCur] = imuRotZ[imuPointerCur-1] + angular_z * timeDiff;
+
+            // //直接用当前帧IMU的速度代替当前帧与上一帧之间的IMU速度，误差太大了吧
+            // imuRotX[imuPointerCur] = imuRotX[imuPointerCur-1] + angular_x * timeDiff;
+            // imuRotY[imuPointerCur] = imuRotY[imuPointerCur-1] + angular_y * timeDiff;
+            // imuRotZ[imuPointerCur] = imuRotZ[imuPointerCur-1] + angular_z * timeDiff;
+
+            /****************20250822：改为用两帧之间的平均值计算********************/
+            imuRotX[imuPointerCur] = imuRotX[imuPointerCur-1] + 0.5*(angular_x+last_angular_x) * timeDiff;
+            imuRotY[imuPointerCur] = imuRotY[imuPointerCur-1] + 0.5*(angular_y+last_angular_y) * timeDiff;
+            imuRotZ[imuPointerCur] = imuRotZ[imuPointerCur-1] + 0.5*(angular_z+last_angular_z) * timeDiff;
+            /*******************************************************************/
+
             imuTime[imuPointerCur] = currentImuTime;
+            last_angular_x = angular_x;
+            last_angular_y = angular_y;
+            last_angular_z = angular_z;
+
             ++imuPointerCur;
         }
 
@@ -458,7 +487,7 @@ public:
 
         // get start odometry at the beinning of the scan
         nav_msgs::Odometry startOdomMsg;
-        //获取距离激光帧最近的里程计帧
+        //获取距离激光帧最近的里程计帧,取出第一帧大于等于当前激光帧时间的里程计
         for (int i = 0; i < (int)odomQueue.size(); ++i)
         {
             startOdomMsg = odomQueue[i];
@@ -636,6 +665,8 @@ public:
             *rotYCur = imuRotY[imuPointerFront] * ratioFront + imuRotY[imuPointerBack] * ratioBack;
             *rotZCur = imuRotZ[imuPointerFront] * ratioFront + imuRotZ[imuPointerBack] * ratioBack;
         }
+
+        std::cout<<"旋转畸变处理"<<std::endl;
     }
 
     //赋值成了0
@@ -645,23 +676,32 @@ public:
 
         // If the sensor moves relatively slow, like walking speed, positional deskew seems to have little benefits. Thus code below is commented.
 
-        // if (cloudInfo.odomAvailable == false || odomDeskewFlag == false)
-        //     return;
+        //***********20250822放开：同一帧激光点云中的点在去畸变时也考虑位置的变化**************//
+        if (cloudInfo.odomAvailable == false || odomDeskewFlag == false)
+            return;
+        
+        if(deskewFlag == 1)
+        {
+            std::cout<<"时间差："<<(timeScanEnd - timeScanCur)<<std::endl;
+            float ratio = relTime / (timeScanEnd - timeScanCur);
 
-        // float ratio = relTime / (timeScanEnd - timeScanCur);
-
-        // *posXCur = ratio * odomIncreX;
-        // *posYCur = ratio * odomIncreY;
-        // *posZCur = ratio * odomIncreZ;
+            *posXCur = ratio * odomIncreX;
+            *posYCur = ratio * odomIncreY;
+            *posZCur = ratio * odomIncreZ;
+        }
+        /******************************************************************************/
     }
 
+    //真正的激光点云去畸变函数
     PointType deskewPoint(PointType *point, double relTime)
     {
+        //不进行畸变处理
         if (deskewFlag == -1 || cloudInfo.imuAvailable == false)
             return *point;
 
         double pointTime = timeScanCur + relTime;
 
+        //取得是IMU的旋转预计分，激光里程计的位置
         float rotXCur, rotYCur, rotZCur;
         findRotation(pointTime, &rotXCur, &rotYCur, &rotZCur);
 
@@ -692,6 +732,12 @@ public:
     //对点云进行投影，即去畸变处理
     void projectPointCloud()
     {
+        // if(deskewFlag == -1) //点云帧中的点无时间信息
+        {
+
+        }
+
+
         int cloudSize = laserCloudIn->points.size();
         // range image projection
         for (int i = 0; i < cloudSize; ++i)
@@ -716,7 +762,7 @@ public:
             if (i % point_filter_num != 0)
                 continue;
 
-            //对点云进行了坐标变换，默认了同一帧的两个点之间的位置平移为0，只进行了旋转（取的是IMU旋转）
+            //对单个点云进行了坐标变换，默认了同一帧的两个点之间的位置平移为0，只进行了旋转（取的是IMU旋转）
             thisPoint = deskewPoint(&thisPoint, laserCloudIn->points[i].time);
 
             fullCloud->push_back(thisPoint);

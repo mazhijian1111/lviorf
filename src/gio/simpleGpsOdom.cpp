@@ -26,9 +26,9 @@ public:
         nh.param<std::string>("frame/map_frame", map_frame, "map");
 
         //读取原点经纬度坐标
-        nh.param<double>("initial_GPS_longitude", init_gps_longitude, 124.1);
-        nh.param<double>("initial_GPS_latitude", init_gps_latitude, 24.1);
-        nh.param<double>("initial_GPS_altitude", init_gps_altitude, 10);
+        nh.param<double>("init_lla/initial_GPS_longitude", init_gps_longitude, 124.1);
+        nh.param<double>("init_lla/initial_GPS_latitude", init_gps_latitude, 24.1);
+        nh.param<double>("init_lla/initial_GPS_altitude", init_gps_altitude, 10);
         std::cout << "map_gps_longitude: " << init_gps_longitude << ", map_gps_latitude: " << init_gps_latitude << ", map_gps_altitude: " << init_gps_altitude << std::endl;
 
         std::cout << "gps topic: " << gps_topic << std::endl;
@@ -151,7 +151,7 @@ private:
         Eigen::Vector3d lla(msg->latitude, msg->longitude, msg->altitude);
         // std::cout << "LLA: " << lla.transpose() << std::endl;
         if (!initENU) {
-            ROS_INFO("Init Orgin GPS LLA  %f, %f, %f", msg->latitude, msg->longitude, msg->altitude);
+            ROS_INFO("Init Orgin GPS latitude: %f, longitude:%f, altitude:%f", msg->latitude, msg->longitude, msg->altitude);
             geo_converter.Reset(lla[0], lla[1], lla[2]);
             initENU = true;
 
@@ -341,8 +341,8 @@ private:
         odom_msg.pose.pose.orientation.z = lidar_orientation1.z();
         odom_msg.pose.pose.orientation.w = lidar_orientation1.w(); 
 
-        if(count%10 == 0) 
-            ROS_INFO("gps_xyz : %f, %f, %f", lidar_position[0], lidar_position[1], lidar_position[2]);
+        // if(count%10 == 0) 
+        //     ROS_INFO("gps_xyz : %f, %f, %f", lidar_position[0], lidar_position[1], lidar_position[2]);
        /*****************************20250729：位姿转换结束**************************************************** */
         double distance1 = sqrt(pow(lidar_position[0]-last_gps_position[0],2) + pow(lidar_position[1]-last_gps_position[1], 2));
         if (distance1 > 2.0 ) {

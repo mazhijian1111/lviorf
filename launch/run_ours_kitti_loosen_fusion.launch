@@ -1,0 +1,45 @@
+<launch>
+
+    <arg name="project" default="lviorf"/>
+    
+    <!-- Lidar odometry param -->
+    <rosparam file="$(find lviorf)/config/pinhole/kitti_params_lidar.yaml" command="load" />
+    
+    <!-- VINS config -->
+    <param name="vins_config_file" type="string" value="$(find lviorf)/config/pinhole/kitti_params_camera.yaml" />
+
+    <rosparam command="load" file="$(find lviorf)/config/vlp_gps.yaml" />
+
+    <include file="$(find lviorf)/launch/gnss_odom_calibrator.launch" />
+
+    <!--- LOAM -->
+    <include file="$(find lviorf)/launch/include/module_loam.launch" />
+
+    <!--- Robot State TF -->
+    <!-- <include file="$(find lviorf)/launch/include/module_robot_state_publisher.launch" /> -->
+
+    <!--- Run IMU-GPS-fusion-localizer -->
+    <!-- <include file="$(find lviorf)/launch/imu_gps_localization.launch" /> -->
+    <!-- <param name="acc_noise"       type="double" value="1e-2" />
+    <param name="gyro_noise"      type="double" value="1e-4" />
+    <param name="acc_bias_noise"  type="double" value="1e-6" />
+    <param name="gyro_bias_noise" type="double" value="1e-8" />
+
+    <param name="I_p_Gps_x"       type="double" value="0.0" />
+    <param name="I_p_Gps_y"       type="double" value="0.0" />
+    <param name="I_p_Gps_z"       type="double" value="0.0" />
+
+    <param name="log_folder"      type="string" value="$(find lviorf)" />
+
+    <node name="$(arg project)_gps_imu_node" pkg="$(arg project)" type="$(arg project)_gps_imu_node" output="screen" /> -->
+    <!-- <node pkg="lviorf" type="lviorf_gpsOdometry" name="lviorf_gpsOdometry" output="screen"/> -->
+    <!--- Run Rviz-->
+    <include file="$(find lviorf)/launch/include/module_rviz.launch" />
+
+    
+    <!-- <node pkg="lviorf" type="global_fusion_node" name="global_fusion_node" output="screen">
+        <param name="fusion_initial_GPS_latitude" value="49.049500" />
+        <param name="fusion_initial_GPS_longitude" value="8.396601" />
+        <param name="fusion_initial_GPS_altitude" value="113.057571" />
+    </node> -->
+</launch>

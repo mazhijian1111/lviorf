@@ -122,10 +122,17 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                              const std_msgs::Header &header)
 {
     // Add new image features
+    ROS_INFO("new image coming ------------------------------------------");
+    ROS_INFO("Adding feature points %lu", image.size());
     if (f_manager.addFeatureCheckParallax(frame_count, image, td))
         marginalization_flag = MARGIN_OLD;
     else
         marginalization_flag = MARGIN_SECOND_NEW;
+    
+    ROS_INFO("this frame is--------------------%s", marginalization_flag ? "reject" : "accept");
+    ROS_INFO("%s", marginalization_flag ? "Non-keyframe" : "Keyframe");
+    ROS_INFO("Solving %d", frame_count);
+    ROS_INFO("number of feature: %d", f_manager.getFeatureCount());
 
     // Marginalize old imgs if lidar odometry available for initialization
     if (solver_flag == INITIAL && lidar_initialization_info[0] >= 0)
@@ -174,7 +181,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                 solveOdometry();
                 slideWindow();
                 f_manager.removeFailures();
-                // ROS_INFO("Initialization finish!");
+                ROS_INFO("Initialization finish!");
                 last_R = Rs[WINDOW_SIZE];
                 last_P = Ps[WINDOW_SIZE];
                 last_R0 = Rs[0];
@@ -208,6 +215,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         for (int i = 0; i <= WINDOW_SIZE; i++)
             key_poses.push_back(Ps[i]);
 
+        ROS_INFO("当前滑窗优化得到的关键帧位姿数量:%ld",key_poses.size());
         last_R = Rs[WINDOW_SIZE];
         last_P = Ps[WINDOW_SIZE];
         last_R0 = Rs[0];
@@ -659,7 +667,7 @@ bool Estimator::failureDetection()
         ROS_ERROR("VINS little feature %d!", f_manager.last_track_num);
         //return true;
     }
-    if (Bas[WINDOW_SIZE].norm() > 2.5)
+    if (Bas[WINDOW_SIZE].norm() > 5.5)
     {
         ROS_ERROR("VINS big IMU acc bias estimation %f, restart estimator!", Bas[WINDOW_SIZE].norm());
         return true;
@@ -669,13 +677,13 @@ bool Estimator::failureDetection()
         ROS_ERROR("VINS big IMU gyr bias estimation %f, restart estimator!", Bgs[WINDOW_SIZE].norm());
         return true;
     }
-    if (Vs[WINDOW_SIZE].norm() > 30.0)
+    if (Vs[WINDOW_SIZE].norm() > 50.0)
     {
         ROS_ERROR("VINS big speed %f, restart estimator!", Vs[WINDOW_SIZE].norm());
         return true;
     }
     Vector3d tmp_P = Ps[WINDOW_SIZE];
-    if ((tmp_P - last_P).norm() > 5.0)
+    if ((tmp_P - last_P).norm() > 10.0)
     {
         ROS_ERROR("VINS big translation, restart estimator!");
         return true;

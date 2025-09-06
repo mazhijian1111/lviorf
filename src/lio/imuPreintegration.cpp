@@ -88,6 +88,7 @@ public:
         pubImuPath       = nh.advertise<nav_msgs::Path>    ("lviorf/imu/path", 1);
     }
 
+    //从里程计中获取变换矩阵
     Eigen::Affine3f odom2affine(nav_msgs::Odometry odom)
     {
         double x, y, z, roll, pitch, yaw;
@@ -113,7 +114,7 @@ public:
     //IMU里程计增量回调函数
     void imuOdometryHandler(const nav_msgs::Odometry::ConstPtr& odomMsg)
     {
-        //发布odom系到map系的静态TF
+        //发布odom系到map系的静态TF，默认是同一个坐标系
         static tf::TransformBroadcaster tfMap2Odom;
         static tf::Transform map_to_odom = tf::Transform(tf::createQuaternionFromRPY(0, 0, 0), tf::Vector3(0, 0, 0));
         tfMap2Odom.sendTransform(tf::StampedTransform(map_to_odom, odomMsg->header.stamp, mapFrame, odometryFrame));
@@ -145,6 +146,7 @@ public:
         pcl::getTranslationAndEulerAngles(imuOdomAffineLast, x, y, z, roll, pitch, yaw);
         
         // publish latest odometry
+        //发布当前激光帧对应的IMU里程计增量
         nav_msgs::Odometry laserOdometry = imuOdomQueue.back();
         laserOdometry.pose.pose.position.x = x;
         laserOdometry.pose.pose.position.y = y;

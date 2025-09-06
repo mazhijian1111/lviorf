@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<launch>
+    <node pkg="lviorf" type="multi_sensor_fusion_node" name="multi_sensor_fusion_node" output="screen">
+        <param name="max_buffer_time" value="2.0" />
+        <param name="optimization_rate" value="10.0" />
+        <param name="publishing_rate" value="50.0" />
+        <param name="base_frame_id" value="base_link" />
+        <param name="odom_frame_id" value="odom" />
+        <param name="world_frame_id" value="map" />
+        
+        <!-- 重映射输入话题 -->
+        <remap from="visual_odom" to="/lviorf/vins/odometry/odometry" /> 
+        <remap from="laser_odom" to="/lviorf/mapping/odometry" />
+        <remap from="gnss_odom" to="/gps/odom" />
+        
+        <!-- 重映射输出话题 -->
+        <remap from="fused_odom" to="/fused_odometry" />
+    </node>
+</launch>

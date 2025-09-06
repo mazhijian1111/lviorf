@@ -21,8 +21,14 @@ find_package(catkin REQUIRED COMPONENTS
   nav_msgs
   message_generation
   visualization_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+  geographic_msgs
+  geodesy
 )
 
+find_package(Eigen3 REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(PCL REQUIRED QUIET)
 find_package(OpenCV REQUIRED QUIET)
@@ -32,6 +38,9 @@ find_package(Boost REQUIRED COMPONENTS timer)
 
 # set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/usr/share/cmake/geographiclib/")
 # find_package(GeographicLib REQUIRED)
+
+# 包含GeographicLib的头文件路径
+include_directories("../third_party/GeographicLib")
 
 add_message_files(
   DIRECTORY msg
@@ -65,6 +74,7 @@ catkin_package(
   message_runtime
   message_generation
   visualization_msgs
+  tf2 tf2_ros geographic_msgs geodesy
 )
 
 add_subdirectory(third_party/GeographicLib)
@@ -78,6 +88,7 @@ include_directories(
   ${CERES_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
 	${GTSAM_INCLUDE_DIR}
+  ${EIGEN3_INCLUDE_DIRS}
   third_party/GeographicLib/include
 )
 
@@ -106,7 +117,7 @@ target_link_libraries(${PROJECT_NAME}_imageProjection ${catkin_LIBRARIES} ${PCL_
 add_executable(${PROJECT_NAME}_mapOptmization src/lio/mapOptmization.cpp ${common_lib})
 add_dependencies(${PROJECT_NAME}_mapOptmization ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_compile_options(${PROJECT_NAME}_mapOptmization PRIVATE ${OpenMP_CXX_FLAGS})
-target_link_libraries(${PROJECT_NAME}_mapOptmization Boost::timer ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} gtsam)
+target_link_libraries(${PROJECT_NAME}_mapOptmization Boost::timer ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} libGeographiccc gtsam)
 
 # IMU Preintegration
 add_executable(${PROJECT_NAME}_imuPreintegration src/lio/imuPreintegration.cpp ${common_lib})
@@ -165,5 +176,39 @@ target_link_libraries(${PROJECT_NAME}_gps_imu_node ${catkin_LIBRARIES} ${PCL_LIB
 
 add_executable(${PROJECT_NAME}_gpsOdometry src/gio/simpleGpsOdom.cpp)
 target_link_libraries(${PROJECT_NAME}_gpsOdometry ${catkin_LIBRARIES} libGeographiccc)
+
+
+add_executable(global_fusion_node 
+	src/loosen_fusion/global_fusion/globalOptNode.cpp
+	src/loosen_fusion/global_fusion/globalOpt.cpp)
+
+target_link_libraries(global_fusion_node ${catkin_LIBRARIES} ${CERES_LIBRARIES} libGeographiccc) 
+
+
+
+
+# GNSS里程计与激光里程计映射节点，将GNSS里程计映射到激光里程计上
+add_executable(gnss_odom_calibrator src/gio/gnss_odom_calibrator.cpp)
+target_link_libraries(gnss_odom_calibrator
+  ${catkin_LIBRARIES} libGeographiccc
+)
+
+install(TARGETS gnss_odom_calibrator
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+# GNSS里程计、激光里程计、视觉里程计在后端进行松融合
+add_executable(multi_sensor_fusion_node src/loosen_fusion/glvio_loosen/multi_sensor_fusion_node.cpp)
+target_link_libraries(multi_sensor_fusion_node
+  ${catkin_LIBRARIES}
+  ${CERES_LIBRARIES}
+)
+install(TARGETS multi_sensor_fusion_node
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+
+
+
 
 

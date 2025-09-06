@@ -22,7 +22,7 @@ ros::Publisher pub_match;
 ros::Publisher pub_restart;
 
 // feature tracker variables
-FeatureTracker trackerData[NUM_OF_CAM];
+FeatureTracker trackerData[NUM_OF_CAM]; //特征点跟踪数组
 double first_image_time;
 int pub_count = 1;
 bool first_image_flag = true;
@@ -89,7 +89,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 
     cv::Mat show_img = ptr->image;
     TicToc t_r;
-    for (int i = 0; i < NUM_OF_CAM; i++)
+    for (int i = 0; i < NUM_OF_CAM; i++) //读入图像
     {
         ROS_DEBUG("processing camera %d", i);
         if (i != 1 || !STEREO_TRACK)
@@ -168,6 +168,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         feature_points->channels.push_back(velocity_y_of_point);
 
         // get feature depth from lidar point cloud
+        //读取激光雷达点云
         pcl::PointCloud<PointType>::Ptr depth_cloud_temp(new pcl::PointCloud<PointType>());
         mtx_lidar.lock();
         *depth_cloud_temp = *depthCloud;
@@ -336,9 +337,14 @@ int main(int argc, char **argv)
 
     // read camera params
     for (int i = 0; i < NUM_OF_CAM; i++)
+    {
+        std::cout<<"使用相机的数量："<<NUM_OF_CAM<<std::endl;
         trackerData[i].readIntrinsicParameter(CAM_NAMES[i]);
+    }
+        
 
     // load fisheye mask to remove features on the boundry
+    std::cout<< ((FISHEYE > 0)?"是":"未")<<"使用鱼眼相机"<<std::endl;
     if(FISHEYE)
     {
         for (int i = 0; i < NUM_OF_CAM; i++)

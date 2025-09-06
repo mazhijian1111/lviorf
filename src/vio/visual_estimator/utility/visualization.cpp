@@ -200,9 +200,9 @@ void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
         //20250731 add
         // std::cout<<"vio_xyz1: "<<odometry.pose.pose.position.x<<","<<odometry.pose.pose.position.y<<","<<odometry.pose.pose.position.z<<std::endl;
         // ROS_INFO("vio_xyz: %f,%f,%f",odometry.pose.pose.position.x,odometry.pose.pose.position.y,odometry.pose.pose.position.z);
-        if(estimator.frame_count == WINDOW_SIZE)
-        {
-            std::cout<<"vio_xyz: "<<odometry.pose.pose.position.x<<","<<odometry.pose.pose.position.y<<","<<odometry.pose.pose.position.z<<std::endl;
+        // if(estimator.frame_count == WINDOW_SIZE)
+        // {
+            // std::cout<<"vio_xyz: "<<odometry.pose.pose.position.x<<","<<odometry.pose.pose.position.y<<","<<odometry.pose.pose.position.z<<std::endl;
             geometry_msgs::PoseStamped pose;
             pose.header = header;
             pose.header.frame_id = "vins_world";
@@ -216,9 +216,9 @@ void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
             camera_path.header = header;
             camera_path.header.frame_id = "vins_world";
             camera_path.poses.push_back(pose);
-            pub_camera_path.publish(path);
+            pub_camera_path.publish(path); //发布相机轨迹
             // ROS_INFO("vio_xyz: %f,%f,%f",odometry.pose.pose.position.x,odometry.pose.pose.position.y,odometry.pose.pose.position.z);
-        }
+        // }
   
         
 
