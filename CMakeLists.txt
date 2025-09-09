@@ -124,6 +124,12 @@ add_executable(${PROJECT_NAME}_imuPreintegration src/lio/imuPreintegration.cpp $
 target_link_libraries(${PROJECT_NAME}_imuPreintegration Boost::timer ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
 
+# add_executable(laser_odom_to_global_enu 
+# 	src/lio/lio2absolocalizer.cpp
+#   )
+
+# target_link_libraries(laser_odom_to_global_enu ${catkin_LIBRARIES} libGeographiccc) 
+
 ######################
 # <!-- lviorf_yjz_lucky_boy -->
 # VIO

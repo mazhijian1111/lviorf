@@ -7,9 +7,12 @@ Panels:
         - /Odometry1/Odom GPS1/Shape1
         - /Mapping1
         - /Mapping1/LIO1
+        - /Mapping1/LIO1/Map (cloud)1
+        - /Mapping1/LIO1/Map (global)1
         - /Mapping1/VIO1
+        - /Mapping1/VIO1/point_cloud1
       Splitter Ratio: 0.5600000023841858
-    Tree Height: 162
+    Tree Height: 182
   - Class: rviz/Selection
     Name: Selection
   - Class: rviz/Views
@@ -32,9 +35,12 @@ Visualization Manager:
       Displays:
         - Class: rviz/TF
           Enabled: false
+          Filter (blacklist): ""
+          Filter (whitelist): ""
           Frame Timeout: 999
           Frames:
             All Enabled: false
+          Marker Alpha: 1
           Marker Scale: 3
           Name: TF
           Show Arrows: true
@@ -44,19 +50,23 @@ Visualization Manager:
             {}
           Update Interval: 0
           Value: false
-        - Class: rviz/Axes
+        - Alpha: 1
+          Class: rviz/Axes
           Enabled: true
           Length: 2
           Name: map
           Radius: 0.5
           Reference Frame: map
+          Show Trail: false
           Value: true
-        - Class: rviz/Axes
+        - Alpha: 1
+          Class: rviz/Axes
           Enabled: true
           Length: 1
           Name: base_link
           Radius: 0.30000001192092896
           Reference Frame: base_link
+          Show Trail: false
           Value: true
       Enabled: true
       Name: links
@@ -83,6 +93,7 @@ Visualization Manager:
           Keep: 300
           Name: Odom IMU
           Position Tolerance: 0.10000000149011612
+          Queue Size: 10
           Shape:
             Alpha: 1
             Axes Length: 0.5
@@ -117,6 +128,7 @@ Visualization Manager:
           Keep: 1000
           Name: Odom GPS
           Position Tolerance: 0.10000000149011612
+          Queue Size: 10
           Shape:
             Alpha: 1
             Axes Length: 2
@@ -151,6 +163,7 @@ Visualization Manager:
           Keep: 300
           Name: Odom lidar
           Position Tolerance: 0.10000000149011612
+          Queue Size: 10
           Shape:
             Alpha: 1
             Axes Length: 0.25
@@ -309,8 +322,8 @@ Visualization Manager:
               Queue Size: 10
               Selectable: true
               Size (Pixels): 1.5
-              Size (m): 0.009999999776482582
-              Style: Points
+              Size (m): 0.30000001192092896
+              Style: Flat Squares
               Topic: /lviorf/mapping/map_global
               Unreliable: false
               Use Fixed Frame: true
@@ -333,6 +346,7 @@ Visualization Manager:
                 Z: 0
               Pose Color: 255; 85; 255
               Pose Style: None
+              Queue Size: 10
               Radius: 0.029999999329447746
               Shaft Diameter: 0.10000000149011612
               Shaft Length: 0.10000000149011612
@@ -356,6 +370,7 @@ Visualization Manager:
                 Z: 0
               Pose Color: 255; 85; 255
               Pose Style: None
+              Queue Size: 10
               Radius: 0.029999999329447746
               Shaft Diameter: 0.10000000149011612
               Shaft Length: 0.10000000149011612
@@ -395,7 +410,8 @@ Visualization Manager:
               Marker Topic: /lviorf/mapping/loop_closure_constraints
               Name: Loop constraint
               Namespaces:
-                {}
+                loop_edges: true
+                loop_nodes: true
               Queue Size: 100
               Value: true
           Enabled: true
@@ -460,7 +476,7 @@ Visualization Manager:
               Position Transformer: XYZ
               Queue Size: 10
               Selectable: true
-              Size (Pixels): 15
+              Size (Pixels): 5
               Size (m): 0.009999999776482582
               Style: Points
               Topic: /lviorf/vins/odometry/point_cloud
@@ -497,6 +513,7 @@ Visualization Manager:
                 Z: 0
               Pose Color: 255; 85; 255
               Pose Style: None
+              Queue Size: 10
               Radius: 0.029999999329447746
               Shaft Diameter: 0.10000000149011612
               Shaft Length: 0.10000000149011612
@@ -559,44 +576,44 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 154.53009033203125
+      Distance: 515.1207275390625
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
+      Field of View: 0.7853981852531433
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+        X: 11.834354400634766
+        Y: -216.19419860839844
+        Z: -10.906978607177734
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.4597980976104736
+      Pitch: 1.5697963237762451
       Target Frame: base_link
-      Value: Orbit (rviz)
-      Yaw: 2.6267640590667725
+      Yaw: 4.906765937805176
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1052
+  Height: 1136
   Hide Left Dock: false
   Hide Right Dock: true
   OriImg:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd00000004000000000000021f000003c2fc020000000dfb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005c00fffffffb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073010000003d000000df000000c900fffffffb00000014006c006f006f0070005f006d00610074006300680100000122000001030000001600fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730000000286000000a70000005c00fffffffb0000000c004f007200690049006d0067000000020b0000007d0000001600fffffffb0000001600640065007000740068005f0069006d006100670065010000022b000000ee0000001600fffffffb000000160066006500610074007500720065005f0069006d0067010000031f000000e00000001600fffffffb0000000a0049006d0061006700650100000333000000cc00000000000000000000000100000111000003c2fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000003d000003c2000000a400fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000004b000000040fc0100000002fb0000000800540069006d00650000000000000004b00000000000000000fb0000000800540069006d006501000000000000045000000000000000000000055b000003c200000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd00000004000000000000021f00000416fc020000000dfb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005c00fffffffb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073010000003d000000f3000000c900fffffffb00000014006c006f006f0070005f006d006100740063006801000001360000011a0000001600fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730000000286000000a70000005c00fffffffb0000000c004f007200690049006d0067000000020b0000007d0000001600fffffffb0000001600640065007000740068005f0069006d0061006700650100000256000001030000001600fffffffb000000160066006500610074007500720065005f0069006d0067010000035f000000f40000001600fffffffb0000000a0049006d0061006700650100000333000000cc00000000000000000000000100000111000003c2fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000003d000003c2000000a400fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000004b000000040fc0100000002fb0000000800540069006d00650000000000000004b00000000000000000fb0000000800540069006d00650100000000000004500000000000000000000005130000041600000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Selection:
     collapsed: false
   Tool Properties:
     collapsed: false
   Views:
     collapsed: true
-  Width: 1920
-  X: 2560
-  Y: 0
+  Width: 1848
+  X: 1992
+  Y: 27
   depth_image:
     collapsed: false
   feature_img:

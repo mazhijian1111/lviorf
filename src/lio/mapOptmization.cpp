@@ -153,6 +153,9 @@ public:
 
     geometry_msgs::PoseStamped currentPose;
 
+    gtsam::Pose3 vio_pose_last;//视觉里程计信息
+    int index_for_vio_factor = 0;
+
     mapOptimization()
     {
         ISAM2Params parameters;
@@ -1034,9 +1037,10 @@ public:
 
     /***********************************************************************************************************/
         // use imu incremental estimation for pose guess (only rotation)
+        //imuType为0时表示6轴IMU，1时表示9轴IMU
+        std::cout<<"IMU:"<<cloudInfo.imuAvailable<<",imuType:"<<imuType<<std::endl;
         if (cloudInfo.imuAvailable == true && imuType)
         {
-            // std::cout<<"use imu estimation for pose guess"<<std::endl;
             ROS_INFO("use imu estimation for initial pose guess");
             Eigen::Affine3f transBack = pcl::getTransformation(0, 0, 0, cloudInfo.imuRollInit, cloudInfo.imuPitchInit, cloudInfo.imuYawInit);
             Eigen::Affine3f transIncre = lastImuTransformation.inverse() * transBack;
@@ -1047,11 +1051,6 @@ public:
                                                         transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
 
             lastImuTransformation = pcl::getTransformation(0, 0, 0, cloudInfo.imuRollInit, cloudInfo.imuPitchInit, cloudInfo.imuYawInit); // save imu before return;
-            
-/*             // debug print
-            std::cout << "\033[1m\033[34m" << "Imu predict pose >>> " << transformTobeMapped[3] << " " << transformTobeMapped[4] 
-                        << " " << transformTobeMapped[5] << " " << transformTobeMapped[0] << " " << transformTobeMapped[1] 
-                          << " " << transformTobeMapped[2] << "\033[0m" << std::endl; */
             return;
         }
     /***********************************************************************************************************/
@@ -1484,7 +1483,7 @@ public:
         return true;
     }
 
-    //在上一帧与当前帧之间添加里程计因子
+    //在上一帧与当前帧之间添加激光里程计因子
     void addOdomFactor()
     {
         if (cloudKeyPoses3D->points.empty())
@@ -1494,12 +1493,69 @@ public:
             initialEstimate.insert(0, trans2gtsamPose(transformTobeMapped));
         }else{
             noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
-            gtsam::Pose3 poseFrom = pclPointTogtsamPose3(cloudKeyPoses6D->points.back());
-            gtsam::Pose3 poseTo   = trans2gtsamPose(transformTobeMapped);
+            gtsam::Pose3 poseFrom = pclPointTogtsamPose3(cloudKeyPoses6D->points.back()); //上一帧
+            gtsam::Pose3 poseTo   = trans2gtsamPose(transformTobeMapped); //当前帧估计
             gtSAMgraph.add(BetweenFactor<Pose3>(cloudKeyPoses3D->size()-1, cloudKeyPoses3D->size(), poseFrom.between(poseTo), odometryNoise));
             initialEstimate.insert(cloudKeyPoses3D->size(), poseTo);
         }
     }
+
+
+    //是否添加视觉里程计因子？20250909
+    void addVIOFactor()
+    {
+        static int odomResetId1 = 0;
+        static bool lastVIOAvailable = false;
+        gtsam::Pose3 vio_pose = gtsam::Pose3(gtsam::Rot3::RzRyRx(double(cloudInfo.odomRoll), double(cloudInfo.odomPitch), double(cloudInfo.odomYaw)),
+                                  gtsam::Point3(double(cloudInfo.odomX),    double(cloudInfo.odomY),     double(cloudInfo.odomZ)));                
+        
+        double shift_distance = sqrt(pow(vio_pose.x()-vio_pose_last.x(),2)+pow(vio_pose.y()-vio_pose_last.y(),2)+pow(vio_pose.z()-vio_pose_last.z(),2));
+
+        //如果视觉里程计增量小于2.0m，添加视觉里程计因子
+        // std::cout<<"视觉里程计因子距离为："<<shift_distance<<std::endl;
+        if(shift_distance < 2.0)
+        {
+            if (cloudInfo.odomVIOAvailable == true && cloudInfo.odomResetId == odomResetId1)
+            {
+
+                if (lastVIOAvailable == false)
+                {
+                    index_for_vio_factor = cloudKeyPoses3D->size();
+                    vio_pose_last = vio_pose;
+                    lastVIOAvailable = true;
+                } else {
+
+                    if(cloudKeyPoses3D->points.empty())
+                    {
+                        // noiseModel::Diagonal::shared_ptr priorNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-2, 1e-2, M_PI*M_PI, 1e8, 1e8, 1e8).finished()); // rad*rad, meter*meter
+                        // gtSAMgraph.add(PriorFactor<Pose3>(0, vio_pose, priorNoise));
+                        // initialEstimate.insert(0, vio_pose);
+                        // index_for_vio_factor = cloudKeyPoses3D->size();
+                    }else{
+                        // ROS_INFO("add vio factor");
+                        noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1).finished());
+                        gtsam::Pose3 poseFrom = vio_pose_last; //上一帧
+                        gtsam::Pose3 poseTo   = vio_pose; //当前帧估计
+                        gtSAMgraph.add(BetweenFactor<Pose3>(index_for_vio_factor, cloudKeyPoses3D->size(), poseFrom.between(poseTo), odometryNoise));
+                        index_for_vio_factor = cloudKeyPoses3D->size();
+                    }
+                    vio_pose_last = vio_pose;
+                    return;
+                }
+            }else{
+                index_for_vio_factor = cloudKeyPoses3D->size();
+                odomResetId1 = cloudInfo.odomResetId;
+                vio_pose_last = vio_pose;
+                lastVIOAvailable = false;
+            }
+        }else{
+            index_for_vio_factor = cloudKeyPoses3D->size();
+            vio_pose_last = vio_pose;
+        }
+    }
+
+
+
 
     //新的添加GPS因子的机制,20250722增加
     void addGPSFactorNew()
@@ -1715,8 +1771,11 @@ public:
         if (saveFrame() == false)
             return;
 
-        // odom factor
+        // lio odom factor
         addOdomFactor();
+
+        //vio factor
+        addVIOFactor();
 
         // gps factor
         // addGPSFactor();
@@ -1750,6 +1809,8 @@ public:
         PointTypePose thisPose6D;
         Pose3 latestEstimate;
 
+
+        //最新的估计
         isamCurrentEstimate = isam->calculateEstimate();
         latestEstimate = isamCurrentEstimate.at<Pose3>(isamCurrentEstimate.size()-1);
         // cout << "****************************************************" << endl;
@@ -1844,6 +1905,7 @@ public:
         if (cloudKeyPoses3D->points.empty())
             return;
 
+        //如果有闭环，则对位姿和轨迹做一次更新
         if (aLoopIsClosed == true)
         {
             // clear map cache
