@@ -13,6 +13,11 @@ pcl::PointCloud<PointType>::Ptr depthCloud(new pcl::PointCloud<PointType>());
 deque<pcl::PointCloud<PointType>> cloudQueue;
 deque<double> timeQueue;
 
+// deque<pcl::PointCloud<PointType>> cloudQueue_trans;
+// deque<Eigen::Affine3f> transform_offset_deque;
+// deque<Eigen::Affine3f> transform_now_deque;
+// deque<Eigen::Affine3f> lio_transform_deque;
+
 // global depth register for obtaining depth of a feature
 DepthRegister *depthRegister;
 
@@ -174,6 +179,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         *depth_cloud_temp = *depthCloud;
         mtx_lidar.unlock();
 
+        //获取深度信息
         sensor_msgs::ChannelFloat32 depth_of_points = depthRegister->get_depth(img_msg->header.stamp, show_img, depth_cloud_temp, trackerData[0].m_camera, feature_points->points);
         feature_points->channels.push_back(depth_of_points);
         
@@ -223,11 +229,37 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 }
 
 
+//当前帧5s内的激光点云组成深度点云
 void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
 {
+    // std::cout<<"订阅去除畸变的激光点云"<<std::endl;
     static int lidar_count = -1;
     if (++lidar_count % (LIDAR_SKIP+1) != 0)
         return;
+
+    /****************************查询当前帧激光对应的激光里程计 start 20250910***************************************/
+    // static tf::TransformListener listener_lio;
+    // static tf::StampedTransform transform_lio;
+    // try{
+    //     listener_lio.waitForTransform("odom", "lidar_link", laser_msg->header.stamp, ros::Duration(0.1));
+    //     listener_lio.lookupTransform("odom", "lidar_link", laser_msg->header.stamp, transform_lio);
+    // } 
+    // catch (tf::TransformException ex){
+    //     ROS_ERROR("no tf from odom --> base_link");
+    //     return;
+    // }
+    // double liorollCur, liopitchCur, lioyawCur;
+    // tf::Matrix3x3 lio_rotation_matrix(transform_lio.getRotation());
+    // lio_rotation_matrix.getRPY(liorollCur, liopitchCur, lioyawCur);
+    // Eigen::Affine3f lio_transform = pcl::getTransformation(transform_lio.getOrigin().x(), transform_lio.getOrigin().y(), transform_lio.getOrigin().z(), 
+    // liorollCur, liopitchCur, lioyawCur);
+    // std::cout<<"激光里程计变换矩阵："<<std::endl;
+    /****************************查询当前帧激光对应的激光里程计 end 20250910***************************************/
+
+
+
+
+
 
     // 0. listen to transform
     static tf::TransformListener listener;
@@ -237,10 +269,11 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
         listener.lookupTransform("vins_world", "vins_body_ros", laser_msg->header.stamp, transform);
     } 
     catch (tf::TransformException ex){
-        // ROS_ERROR("lidar no tf");
+        ROS_ERROR("no TF from vins_world --> vins_body_ros");
         return;
     }
 
+    //camera_to_ros_transform是将相机系转为标准ROS系，lidar_to_camera_transform是雷达到相机的外参
     tf::Transform trans_lidar_in_world = transform * camera_to_ros_transform.inverse() * lidar_to_camera_transform.inverse();
     tf::Transform transform_ = trans_lidar_in_world;
 
@@ -264,6 +297,13 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
     downSizeFilter.filter(*laser_cloud_in_ds);
     *laser_cloud_in = *laser_cloud_in_ds;
 
+    /************************************20250911 add**************************************************/
+    // pcl::PointCloud<PointType>::Ptr laser_cloud_1(new pcl::PointCloud<PointType>());
+    // pcl::transformPointCloud(*laser_cloud_in, *laser_cloud_1, lio_transform);
+    // *laser_cloud_in = *laser_cloud_1;
+    /*************************************************************************************************/
+
+
     // trans lidar point to ros standard frame
     tf::Transform ros_to_lidar = camera_to_ros_transform.inverse() * lidar_to_camera_transform.inverse();
     double roll, pitch, yaw;
@@ -279,6 +319,7 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
         PointType p = laser_cloud_in->points[i];
         PointType p_trans = laser_cloud_offset->points[i];
 
+        //10是一个经验性的宽松阈值，旨在过滤明显无效点（如数值溢出点），而非精确裁剪视场角
         if (p_trans.x >= 0 && abs(p_trans.y / p_trans.x) <= 10 && abs(p_trans.z / p_trans.x) <= 10)
             laser_cloud_in_filter->push_back(p);
     }
@@ -299,6 +340,7 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
     double timeScanCur = laser_msg->header.stamp.toSec();
     cloudQueue.push_back(*laser_cloud_global);
     timeQueue.push_back(timeScanCur);
+    // lio_transform.push_back(lio_transform);
 
     // 7. pop old cloud
     while (!timeQueue.empty())
@@ -307,11 +349,13 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
         {
             cloudQueue.pop_front();
             timeQueue.pop_front();
+            // lio_transform.pop_front();
         } else {
             break;
         }
     }
 
+    //将队列中的多帧点云合并，需要考虑前后两帧之间的位姿变换
     std::lock_guard<std::mutex> lock(mtx_lidar);
     // 8. fuse global cloud
     depthCloud->clear();
@@ -323,8 +367,197 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
     downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
     downSizeFilter.setInputCloud(depthCloud);
     downSizeFilter.filter(*depthCloudDS);
-    *depthCloud = *depthCloudDS;
+    *depthCloud = *depthCloudDS; //深度点云
+
+    /************************************20250911 add**************************************************/
+    // pcl::PointCloud<PointType>::Ptr laser_cloud_2(new pcl::PointCloud<PointType>());
+    // pcl::transformPointCloud(*depthCloudDS, *laser_cloud_2, lio_transform.inverse());
+    // *depthCloud = *laser_cloud_2;
+    /*************************************************************************************************/
+
+    /************************20250910测试深度点云效果 start************************8*/
+
+
+    /************************20250910测试深度点云效果 end****************************/
 }
+
+
+// //当前帧5s内的激光点云组成深度点云
+// void lidar_callback1(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
+// {
+//     std::cout<<"订阅去除畸变的激光点云"<<std::endl;
+//     static int lidar_count = -1;
+//     if (++lidar_count % (LIDAR_SKIP+1) != 0)
+//         return;
+
+//     /****************************查询当前帧激光对应的激光里程计 start 20250910***************************************/
+//     static tf::TransformListener listener_lio;
+//     static tf::StampedTransform transform_lio;
+//     try{
+//         listener_lio.waitForTransform("odom", "lidar_link", laser_msg->header.stamp, ros::Duration(0.1));
+//         listener_lio.lookupTransform("odom", "lidar_link", laser_msg->header.stamp, transform_lio);
+//     } 
+//     catch (tf::TransformException ex){
+//         ROS_ERROR("no tf from odom --> base_link");
+//         return;
+//     }
+//     double liorollCur, liopitchCur, lioyawCur;
+//     tf::Matrix3x3 lio_rotation_matrix(transform_lio.getRotation());
+//     lio_rotation_matrix.getRPY(liorollCur, liopitchCur, lioyawCur);
+//     Eigen::Affine3f lio_transform = pcl::getTransformation(transform_lio.getOrigin().x(), transform_lio.getOrigin().y(), transform_lio.getOrigin().z(), 
+//     liorollCur, liopitchCur, lioyawCur);
+//     std::cout<<"激光里程计变换矩阵："<<std::endl;
+//     /****************************查询当前帧激光对应的激光里程计 end 20250910***************************************/
+
+
+
+
+
+
+//     // 0. listen to transform
+//     static tf::TransformListener listener;
+//     static tf::StampedTransform transform;
+//     try{
+//         listener.waitForTransform("vins_world", "vins_body_ros", laser_msg->header.stamp, ros::Duration(0.01));
+//         listener.lookupTransform("vins_world", "vins_body_ros", laser_msg->header.stamp, transform);
+//     } 
+//     catch (tf::TransformException ex){
+//         // ROS_ERROR("lidar no tf");
+//         return;
+//     }
+
+//     //camera_to_ros_transform是将相机系转为标准ROS系，lidar_to_camera_transform是雷达到相机的外参
+//     tf::Transform trans_lidar_in_world = transform * camera_to_ros_transform.inverse() * lidar_to_camera_transform.inverse();
+//     tf::Transform transform_ = trans_lidar_in_world;
+
+//     double xCur, yCur, zCur, rollCur, pitchCur, yawCur;
+//     xCur = transform_.getOrigin().x();
+//     yCur = transform_.getOrigin().y();
+//     zCur = transform_.getOrigin().z();
+//     tf::Matrix3x3 m(transform_.getRotation());
+//     m.getRPY(rollCur, pitchCur, yawCur);
+//     Eigen::Affine3f transNow = pcl::getTransformation(xCur, yCur, zCur, rollCur, pitchCur, yawCur);
+
+//     // 1. convert laser cloud message to pcl
+//     pcl::PointCloud<PointType>::Ptr laser_cloud_in(new pcl::PointCloud<PointType>());
+//     pcl::fromROSMsg(*laser_msg, *laser_cloud_in);
+
+//     // 2. downsample new cloud (save memory)
+//     pcl::PointCloud<PointType>::Ptr laser_cloud_in_ds(new pcl::PointCloud<PointType>());
+//     static pcl::VoxelGrid<PointType> downSizeFilter;
+//     downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
+//     downSizeFilter.setInputCloud(laser_cloud_in);
+//     downSizeFilter.filter(*laser_cloud_in_ds);
+//     *laser_cloud_in = *laser_cloud_in_ds;
+
+//     /************************************20250911 add**************************************************/
+//     // pcl::PointCloud<PointType>::Ptr laser_cloud_1(new pcl::PointCloud<PointType>());
+//     // pcl::transformPointCloud(*laser_cloud_in, *laser_cloud_1, lio_transform);
+//     // *laser_cloud_in = *laser_cloud_1;
+//     /*************************************************************************************************/
+
+
+//     // // trans lidar point to ros standard frame
+//     // tf::Transform ros_to_lidar = camera_to_ros_transform.inverse() * lidar_to_camera_transform.inverse();
+//     // double roll, pitch, yaw;
+//     // tf::Matrix3x3(ros_to_lidar.getRotation()).getRPY(roll, pitch, yaw);
+//     // Eigen::Affine3f transOffset = pcl::getTransformation(ros_to_lidar.getOrigin().getX(), ros_to_lidar.getOrigin().getY(), ros_to_lidar.getOrigin().getZ(), roll, pitch, yaw);
+//     // pcl::PointCloud<PointType>::Ptr laser_cloud_offset(new pcl::PointCloud<PointType>());
+//     // pcl::transformPointCloud(*laser_cloud_in, *laser_cloud_offset, transOffset);
+
+//     // // 3. filter lidar points (only keep points in camera view)
+//     // pcl::PointCloud<PointType>::Ptr laser_cloud_in_filter(new pcl::PointCloud<PointType>());
+//     // for (int i = 0; i < (int)laser_cloud_in->size(); ++i)
+//     // {
+//     //     PointType p = laser_cloud_in->points[i];
+//     //     PointType p_trans = laser_cloud_offset->points[i];
+
+//     //     //10是一个经验性的宽松阈值，旨在过滤明显无效点（如数值溢出点），而非精确裁剪视场角
+//     //     if (p_trans.x >= 0 && abs(p_trans.y / p_trans.x) <= 10 && abs(p_trans.z / p_trans.x) <= 10)
+//     //         laser_cloud_in_filter->push_back(p);
+//     // }
+//     // *laser_cloud_in = *laser_cloud_in_filter;
+
+
+
+//     // // 5. transform new cloud into global odom frame
+//     // pcl::PointCloud<PointType>::Ptr laser_cloud_global(new pcl::PointCloud<PointType>());
+//     // pcl::transformPointCloud(*laser_cloud_in, *laser_cloud_global, transNow);
+
+//     // 6. save new cloud
+//     double timeScanCur = laser_msg->header.stamp.toSec();
+//     cloudQueue.push_back(*laser_cloud_global);
+//     timeQueue.push_back(timeScanCur);
+//     lio_transform_deque.push_back(lio_transform);
+//     transform_offset_deque.push_back(transOffset);
+//     transform_now_deque.push_back(transNow);
+
+//     // 7. pop old cloud
+//     while (!timeQueue.empty())
+//     {
+//         if (timeScanCur - timeQueue.front() > 5.0)
+//         {
+//             cloudQueue.pop_front();
+//             timeQueue.pop_front();
+//             lio_transform_deque.pop_front();
+//             transform_offset_deque.pop_front();
+//             transform_now_deque.pop_front();
+//         } else {
+//             break;
+//         }
+//     }
+
+//     //先将队列中的点变换到最后一帧上
+//     for(int i = (int)cloudQueue.size()-2; i >=0; --i)
+//     {
+//         pcl::PointCloud<PointType>::Ptr laser_cloud_i(new pcl::PointCloud<PointType>());
+//         Eigen::Affine3f transBetween = lio_transform_deque[i].inverse()*lio_transform_deque[i+1];
+//         pcl::transformPointCloud(cloudQueue[i], *laser_cloud_offset, transBetween);
+//     }
+
+
+
+
+
+//     //将队列中的多帧点云合并，需要考虑前后两帧之间的位姿变换
+//     std::lock_guard<std::mutex> lock(mtx_lidar);
+//     // 8. fuse global cloud
+//     depthCloud->clear();
+//     for (int i = 0; i < (int)cloudQueue.size(); ++i)
+//     {
+//         // *depthCloud += cloudQueue[i];
+
+
+
+
+//         //0.1 先进行一次ofset变换
+//         pcl::PointCloud<PointType>::Ptr laser_cloud_offset(new pcl::PointCloud<PointType>());
+//         pcl::transformPointCloud(cloudQueue[i], *laser_cloud_offset, transform_offset_deque[i]);
+
+
+//     }
+        
+
+//     // 9. downsample global cloud
+//     pcl::PointCloud<PointType>::Ptr depthCloudDS(new pcl::PointCloud<PointType>());
+//     downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
+//     downSizeFilter.setInputCloud(depthCloud);
+//     downSizeFilter.filter(*depthCloudDS);
+//     *depthCloud = *depthCloudDS; //深度点云
+
+//     /************************************20250911 add**************************************************/
+//     // pcl::PointCloud<PointType>::Ptr laser_cloud_2(new pcl::PointCloud<PointType>());
+//     // pcl::transformPointCloud(*depthCloudDS, *laser_cloud_2, lio_transform.inverse());
+//     // *depthCloud = *laser_cloud_2;
+//     /*************************************************************************************************/
+
+//     /************************20250910测试深度点云效果 start************************8*/
+
+
+//     /************************20250910测试深度点云效果 end****************************/
+// }
+
+
 
 int main(int argc, char **argv)
 {

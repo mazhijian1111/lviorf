@@ -156,6 +156,9 @@ public:
     gtsam::Pose3 vio_pose_last;//视觉里程计信息
     int index_for_vio_factor = 0;
 
+    PointType lastGPSPoint; //上一激光帧最近的的GPS位姿
+    bool firstGPSPoint = false;
+
     mapOptimization()
     {
         ISAM2Params parameters;
@@ -873,14 +876,14 @@ public:
         Eigen::Vector3f curr_pos = transBack.translation();
         Eigen::Vector3f last_pos = lastVIOTransformation.translation();
         double shift_distance = (curr_pos - last_pos).norm();
-        std::cout<<"相邻帧视觉里程计距离为："<<shift_distance<<std::endl;
+        // std::cout<<"相邻帧视觉里程计距离为："<<shift_distance<<std::endl;
         //如果视觉里程计增量小于2.0m，使用lio的初始位姿估计
         if(shift_distance < 2.0)
         {
             if (cloudInfo.odomVIOAvailable == true && cloudInfo.odomResetId == odomResetId)
             {
-                // std::cout<<"use vio estimation for pose guess"<<std::endl;
-                ROS_INFO("use vio estimation for initial pose guess");
+                ROS_INFO("use vio estimation for pose guess");
+                // ROS_INFO("use vio estimation for initial pose guess");
                 // Eigen::Affine3f transBack = pcl::getTransformation(cloudInfo.odomX,    cloudInfo.odomY,     cloudInfo.odomZ, 
                 //                                                    cloudInfo.odomRoll, cloudInfo.odomPitch, cloudInfo.odomYaw);
                 if (lastVIOTransAvailable == false)
@@ -1038,7 +1041,7 @@ public:
     /***********************************************************************************************************/
         // use imu incremental estimation for pose guess (only rotation)
         //imuType为0时表示6轴IMU，1时表示9轴IMU
-        std::cout<<"IMU:"<<cloudInfo.imuAvailable<<",imuType:"<<imuType<<std::endl;
+        // std::cout<<"IMU:"<<cloudInfo.imuAvailable<<",imuType:"<<imuType<<std::endl;
         if (cloudInfo.imuAvailable == true && imuType)
         {
             ROS_INFO("use imu estimation for initial pose guess");
@@ -1501,7 +1504,7 @@ public:
     }
 
 
-    //是否添加视觉里程计因子？20250909
+    //视觉里程计因子，20250909增加
     void addVIOFactor()
     {
         static int odomResetId1 = 0;
@@ -1534,8 +1537,8 @@ public:
                     }else{
                         // ROS_INFO("add vio factor");
                         noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1).finished());
-                        gtsam::Pose3 poseFrom = vio_pose_last; //上一帧
-                        gtsam::Pose3 poseTo   = vio_pose; //当前帧估计
+                        gtsam::Pose3 poseFrom = vio_pose_last; //上一帧视觉估计位姿
+                        gtsam::Pose3 poseTo   = vio_pose; //当前帧视觉估计
                         gtSAMgraph.add(BetweenFactor<Pose3>(index_for_vio_factor, cloudKeyPoses3D->size(), poseFrom.between(poseTo), odometryNoise));
                         index_for_vio_factor = cloudKeyPoses3D->size();
                     }
@@ -1557,7 +1560,7 @@ public:
 
 
 
-    //新的添加GPS因子的机制,20250722增加
+    //新的添加GPS因子的机制,20250722增加，20250910修改
     void addGPSFactorNew()
     {
         // std::cout<<"start add GPS Factor New"<<std::endl;
@@ -1578,12 +1581,12 @@ public:
         
         while (!gpsQueue.empty())
         {
-            if (gpsQueue.front().header.stamp.toSec() < timeLaserInfoCur - 0.2)
+            if (gpsQueue.front().header.stamp.toSec() < timeLaserInfoCur - 0.1)
             {
                 // message too old
                 gpsQueue.pop_front();
             }
-            else if (gpsQueue.front().header.stamp.toSec() > timeLaserInfoCur + 0.2)
+            else if (gpsQueue.front().header.stamp.toSec() > timeLaserInfoCur + 0.1)
             {
                 // message too new
                 return;
@@ -1646,18 +1649,33 @@ public:
         if (abs(gps_x) < 1e-6 && abs(gps_y) < 1e-6)
             return;
 
-        // Add GPS every a few meters
-        if (common_lib_->pointDistance(curLaserPoint, curGPSPoint) < 2.0)
+        if(!firstGPSPoint)
+        {
+            lastGPSPoint = curGPSPoint;
+            firstGPSPoint = true;
             return;
+        }else{
+            // Add GPS every a few meters
+            double shift_distance = common_lib_->pointDistance(lastGPSPoint, curGPSPoint);
+            // std::cout<<"GPS里程计因子距离为:"<<shift_distance<<std::endl;
+            if (shift_distance > 2.0)
+            {
+                lastGPSPoint = curGPSPoint;
+                firstGPSPoint = false;
+                return;
+            }    
 
-        // Add GPS factor
-        gtsam::Vector Vector3(3);
-        Vector3 << max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f);
-        noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
-        gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
-        gtSAMgraph.add(gps_factor);
+            // Add GPS factor
+            gtsam::Vector Vector3(3);
+            Vector3 << max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f);
+            noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
+            gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
+            gtSAMgraph.add(gps_factor);
+            lastGPSPoint = curGPSPoint;
 
-        std::cout<<"add new GPS factor!"<<std::endl;
+            // std::cout<<"add new GPS factor!"<<std::endl;
+        }
+
     }
 
 
@@ -1971,6 +1989,7 @@ public:
                                                       tf::Vector3(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]));
         tf::StampedTransform trans_odom_to_lidar = tf::StampedTransform(t_odom_to_lidar, timeLaserInfoStamp, odometryFrame, "lidar_link");
         br.sendTransform(trans_odom_to_lidar);
+        // std::cout<<"publish TF from "<<odometryFrame<<" --> lidar_link"<<std::endl;
         // std::cout<<"lio:"<<transformTobeMapped[3]<<" "<<transformTobeMapped[4]<<" "<<transformTobeMapped[5]<<std::endl;
         // ROS_INFO("lio_xyz : %f, %f, %f", transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
 
