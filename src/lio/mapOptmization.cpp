@@ -88,7 +88,8 @@ public:
 
     ros::ServiceServer srvSaveMap;
 
-    std::deque<nav_msgs::Odometry> gpsQueue;
+    std::deque<nav_msgs::Odometry> gpsQueue; //来自gps经纬高
+    std::deque<nav_msgs::Odometry> gpsQueueOdom; //直接来自GPS里程计
     lviorf::cloud_info cloudInfo;
 
     vector<pcl::PointCloud<PointType>::Ptr> surfCloudKeyFrames;
@@ -314,7 +315,7 @@ public:
     //20250722增加订阅融合后的gps_imu里程计
     void gpsOdomHandler(const nav_msgs::OdometryConstPtr& gpsOdomMsg)
     {
-        gpsQueue.push_back(*gpsOdomMsg);
+        gpsQueueOdom.push_back(*gpsOdomMsg);
     }
 
     //将点经过位姿变换，变换到map系下
@@ -1564,7 +1565,7 @@ public:
     void addGPSFactorNew()
     {
         // std::cout<<"start add GPS Factor New"<<std::endl;
-        if (gpsQueue.empty())
+        if (gpsQueueOdom.empty())
             return;
 
         // wait for system initialized and settles down
@@ -1579,14 +1580,14 @@ public:
         // if (poseCovariance(3,3) < poseCovThreshold && poseCovariance(4,4) < poseCovThreshold)
         //     return;
         
-        while (!gpsQueue.empty())
+        while (!gpsQueueOdom.empty())
         {
-            if (gpsQueue.front().header.stamp.toSec() < timeLaserInfoCur - 0.1)
+            if (gpsQueueOdom.front().header.stamp.toSec() < timeLaserInfoCur - 0.1)
             {
                 // message too old
-                gpsQueue.pop_front();
+                gpsQueueOdom.pop_front();
             }
-            else if (gpsQueue.front().header.stamp.toSec() > timeLaserInfoCur + 0.1)
+            else if (gpsQueueOdom.front().header.stamp.toSec() > timeLaserInfoCur + 0.1)
             {
                 // message too new
                 return;
@@ -1606,9 +1607,9 @@ public:
         double CurrLaserTime = timeLaserInfoCur;
         double minTimeDiff = 1000000;
         int minIndex = -1;
-        for (int i = 0; i < (int)gpsQueue.size(); ++i)
+        for (int i = 0; i < (int)gpsQueueOdom.size(); ++i)
         {
-            double timeDiff = abs(gpsQueue[i].header.stamp.toSec() - CurrLaserTime);
+            double timeDiff = abs(gpsQueueOdom[i].header.stamp.toSec() - CurrLaserTime);
             if (timeDiff < minTimeDiff)
             {
                 minTimeDiff = timeDiff;
@@ -1621,20 +1622,20 @@ public:
           return;
         
         PointType curGPSPoint; //当前激光帧最近的的GPS位姿
-        curGPSPoint.x = gpsQueue[minIndex].pose.pose.position.x;
-        curGPSPoint.y = gpsQueue[minIndex].pose.pose.position.y;
-        curGPSPoint.z = gpsQueue[minIndex].pose.pose.position.z;
+        curGPSPoint.x = gpsQueueOdom[minIndex].pose.pose.position.x;
+        curGPSPoint.y = gpsQueueOdom[minIndex].pose.pose.position.y;
+        curGPSPoint.z = gpsQueueOdom[minIndex].pose.pose.position.z;
 
         // GPS too noisy, skip
-        float noise_x = gpsQueue[minIndex].pose.covariance[0];
-        float noise_y = gpsQueue[minIndex].pose.covariance[7];
-        float noise_z = gpsQueue[minIndex].pose.covariance[14];
+        float noise_x = gpsQueueOdom[minIndex].pose.covariance[0];
+        float noise_y = gpsQueueOdom[minIndex].pose.covariance[7];
+        float noise_z = gpsQueueOdom[minIndex].pose.covariance[14];
         // std::cout<<"noise_x:"<<noise_x<<" noise_y:"<<noise_y<<" noise_z:"<<noise_z<<std::endl;
         if (noise_x > gpsCovThreshold || noise_y > gpsCovThreshold)
             return;
 
-        float gps_x = gpsQueue[minIndex].pose.pose.position.x;
-        float gps_y = gpsQueue[minIndex].pose.pose.position.y;
+        float gps_x = gpsQueueOdom[minIndex].pose.pose.position.x;
+        float gps_y = gpsQueueOdom[minIndex].pose.pose.position.y;
         float gps_z = 0.0;
         if (!useGpsElevation)
         {
@@ -1796,7 +1797,7 @@ public:
         addVIOFactor();
 
         // gps factor
-        // addGPSFactor();
+        addGPSFactor();
 
         // addGPSFactorNew();
 
