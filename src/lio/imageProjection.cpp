@@ -168,10 +168,10 @@ public:
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imuMsg)
     {
         // ROS_INFO("imuHandler");
-        sensor_msgs::Imu thisImu = imuConverter(*imuMsg);
+        // sensor_msgs::Imu thisImu = imuConverter(*imuMsg);
 
         //使用厦门数据时
-        // sensor_msgs::Imu thisImu = imuConverterInXiamen(*imuMsg);
+        sensor_msgs::Imu thisImu = imuConverterInXiamen(*imuMsg);
 
         std::lock_guard<std::mutex> lock1(imuLock);
         imuQueue.push_back(thisImu);
@@ -212,7 +212,7 @@ public:
     //激光点云回调函数，对激光点云进行去畸变处理
     void cloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     {
-        // ROS_INFO("cloudHandler");
+        ROS_INFO("cloudHandler");
         //检查激光点云是否符合要求
         if (!cachePointCloud(laserCloudMsg))
             return;
