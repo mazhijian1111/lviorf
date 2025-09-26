@@ -295,6 +295,44 @@ public:
 
         return imu_out;
     }
+
+   //IMU位姿转换,厦门956车的IMU数据要对角速度、加速度除以125
+    sensor_msgs::Imu imuConverterInXiamen(const sensor_msgs::Imu& imu_in)
+    {
+        sensor_msgs::Imu imu_out = imu_in;
+        // rotate acceleration
+        Eigen::Vector3d acc(imu_in.linear_acceleration.x/125.0, imu_in.linear_acceleration.y/125.0, imu_in.linear_acceleration.z/125.0);
+        acc = extRot * acc;
+        imu_out.linear_acceleration.x = acc.x();
+        imu_out.linear_acceleration.y = acc.y();
+        imu_out.linear_acceleration.z = acc.z();
+        // rotate gyroscope
+        Eigen::Vector3d gyr(imu_in.angular_velocity.x/125.0, imu_in.angular_velocity.y/125.0, imu_in.angular_velocity.z/125.0);
+        gyr = extRot * gyr;
+        imu_out.angular_velocity.x = gyr.x();
+        imu_out.angular_velocity.y = gyr.y();
+        imu_out.angular_velocity.z = gyr.z();
+
+        if (imuType) {
+            // rotate roll pitch yaw
+            Eigen::Quaterniond q_from(imu_in.orientation.w, imu_in.orientation.x, imu_in.orientation.y, imu_in.orientation.z);
+            Eigen::Quaterniond q_final = q_from * extQRPY;
+            imu_out.orientation.x = q_final.x();
+            imu_out.orientation.y = q_final.y();
+            imu_out.orientation.z = q_final.z();
+            imu_out.orientation.w = q_final.w();
+
+            if (sqrt(q_final.x()*q_final.x() + q_final.y()*q_final.y() + q_final.z()*q_final.z() + q_final.w()*q_final.w()) < 0.1)
+            {
+                ROS_ERROR("Invalid quaternion, please use a 9-axis IMU!");
+                ros::shutdown();
+            }
+        }
+
+        return imu_out;
+    }
+
+
 };
 
 template<typename T>
