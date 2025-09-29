@@ -66,7 +66,28 @@ typedef pcl::PointXYZI PointType;
 // <!-- lviorf_localization_yjz_lucky_boy -->
 std::shared_ptr<CommonLib::common_lib> common_lib_;
 
-enum class SensorType { VELODYNE, OUSTER, LIVOX, ROBOSENSE, MULRAN};
+enum class SensorType { VELODYNE, OUSTER, LIVOX, ROBOSENSE, MULRAN, RSHelios};
+
+namespace RSHelios_ros {
+// rslidar和velodyne的格式有微小的区别
+// rslidar的点云格式
+struct RsPointXYZIRT {
+    PCL_ADD_POINT4D;
+    float intensity;
+    uint16_t ring = 0;
+    double timestamp = 0;
+
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+} EIGEN_ALIGN16;
+}
+POINT_CLOUD_REGISTER_POINT_STRUCT(RSHelios_ros::RsPointXYZIRT,
+    (float, x, x)
+    (float, y, y)
+    (float, z, z)
+    (float, intensity, intensity)
+    (uint16_t, ring, ring)
+    (double, timestamp, timestamp)   
+)
 
 class ParamServer
 {
@@ -198,7 +219,11 @@ public:
         else if (sensorStr == "mulran")
         {
             sensor = SensorType::MULRAN;
-        } 
+        }
+        else if(sensorStr == "rshelios") 
+        {
+            sensor = SensorType::RSHelios;
+        }
         else {
             ROS_ERROR_STREAM(
                 "Invalid sensor type (must be either 'velodyne' or 'ouster' or 'livox' or 'robosense' or 'mulran'): " << sensorStr);

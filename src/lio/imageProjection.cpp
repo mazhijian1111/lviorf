@@ -240,6 +240,8 @@ public:
         //从队列中取出最早的点云帧
         currentCloudMsg = std::move(cloudQueue.front());
         cloudQueue.pop_front();
+
+        pcl::PointCloud<RSHelios_ros::RsPointXYZIRT> pl_orig_RSHelios;
         
         //根据激光雷达的类型处理点云数据
         if (sensor == SensorType::VELODYNE || sensor == SensorType::LIVOX)
@@ -300,6 +302,47 @@ public:
                 dst.ring = src.ring;
                 dst.time = src.timestamp - start_stamptime;
             }
+        }  //<!-- mzj -->
+        else if(sensor == SensorType::RSHelios)
+        {
+            // Convert to Velodyne format
+            std::cout<<"RSHelios 雷达"<<std::endl;
+            pcl::fromROSMsg(currentCloudMsg, pl_orig_RSHelios);
+            laserCloudIn->points.resize(pl_orig_RSHelios.size());
+            laserCloudIn->is_dense = pl_orig_RSHelios.is_dense;
+            // to new pointcloud
+            double start_stamptime = pl_orig_RSHelios.points[0].timestamp;
+            for (int i = 0; i < pl_orig_RSHelios.points.size(); i++) {
+                auto &src = pl_orig_RSHelios.points[i];
+                auto &dst = laserCloudIn->points[i];
+                dst.x = src.x;
+                dst.y = src.y;
+                dst.z = src.z;
+                dst.intensity = src.intensity;
+                dst.ring = src.ring;
+                dst.time = src.timestamp - start_stamptime;
+                // ROS_INFO("%.11f,%.6f",src.timestamp,dst.time);
+                // std::cout<<src.timestamp<<",dst.time="<<dst.time<<std::endl;
+                // if (has_nan(pl_orig_RSHelios.points[point_id]))
+                //     continue;
+                // velodyne_ros::Point new_point;
+                // new_point.x = pl_orig_RSHelios.points[point_id].x;
+                // new_point.y = pl_orig_RSHelios.points[point_id].y;
+                // new_point.z = pl_orig_RSHelios.points[point_id].z;
+                // new_point.intensity = pl_orig_RSHelios.points[point_id].intensity;
+                // new_point.ring = pl_orig_RSHelios.points[point_id].ring;
+                // // 计算相对于第一个点的相对时间
+                // // new_point.time = pl_orig_RSHelios.points[point_id].timestamp;
+                // new_point.time =float(pl_orig_RSHelios.points[point_id].timestamp -
+                //                     pl_orig_RSHelios.points[0].timestamp);
+                // if(point_id <12)
+                // {
+                // printf("point_id:%d (%f, %f, %f, %f) ring:%d timestamp:%lf timestamp0:%lf new_point.time:%f\n",point_id,new_point.x,new_point.y,new_point.z,
+                // new_point.intensity,new_point.ring,pl_orig_RSHelios.points[point_id].timestamp,pl_orig_RSHelios.points[0].timestamp,new_point.time);
+                // }
+                // pl_orig.points.push_back(new_point);
+            }
+            
         } 
         else {
             ROS_ERROR_STREAM("Unknown sensor type: " << int(sensor));
@@ -307,56 +350,118 @@ public:
         }
 
         //点云校验
-        cloudHeader = currentCloudMsg.header;
-        timeScanCur = cloudHeader.stamp.toSec();
-        timeScanEnd = timeScanCur + laserCloudIn->points.back().time;
-        // std::cout<<"当前点云帧开始时间："<<timeScanCur<<",持续时间:"<<laserCloudIn->points.back().time<<std::endl;
-
-        // check dense flag
-        if (laserCloudIn->is_dense == false)
+        if(sensor != SensorType::RSHelios)
         {
-            ROS_ERROR("Point cloud is not in dense format, please remove NaN points first!");
-            ros::shutdown();
-        }
+            cloudHeader = currentCloudMsg.header;
+            timeScanCur = cloudHeader.stamp.toSec();
+            timeScanEnd = timeScanCur + laserCloudIn->points.back().time;
+            // std::cout<<"当前点云帧开始时间："<<timeScanCur<<",持续时间:"<<laserCloudIn->points.back().time<<std::endl;
 
-        // check ring channel
-        static int ringFlag = 0;
-        if (ringFlag == 0)
-        {
-            ringFlag = -1;
-            for (int i = 0; i < (int)currentCloudMsg.fields.size(); ++i)
+            // check dense flag
+            if (laserCloudIn->is_dense == false)
             {
-                if (currentCloudMsg.fields[i].name == "ring")
-                {
-                    ringFlag = 1;
-                    break;
-                }
-            }
-            if (ringFlag == -1)
-            {
-                ROS_ERROR("Point cloud ring channel not available, please configure your point cloud data!");
+                ROS_ERROR("Point cloud is not in dense format, please remove NaN points first!");
                 ros::shutdown();
             }
-        }
 
-        // check point time
-        //点的时间校验
-        if (deskewFlag == 0)
-        {
-            deskewFlag = -1;
-            for (auto &field : currentCloudMsg.fields)
+            // check ring channel
+            static int ringFlag = 0;
+            if (ringFlag == 0)
             {
-                if (field.name == "time" || field.name == "t")
+                ringFlag = -1;
+                for (int i = 0; i < (int)currentCloudMsg.fields.size(); ++i)
                 {
-                    deskewFlag = 1;
-                    break;
+                    if (currentCloudMsg.fields[i].name == "ring")
+                    {
+                        ringFlag = 1;
+                        break;
+                    }
+                }
+                if (ringFlag == -1)
+                {
+                    ROS_ERROR("Point cloud ring channel not available, please configure your point cloud data!");
+                    ros::shutdown();
                 }
             }
-            if (deskewFlag == -1) //点无时间戳信息
+
+            // check point time
+            //点的时间校验
+            if (deskewFlag == 0)
             {
-                std::cout<<"点云中的点无时间信息"<<std::endl;
-                // ROS_WARN("Point cloud timestamp not available, deskew function disabled, system will drift significantly!");
-                
+                deskewFlag = -1;
+                for (auto &field : currentCloudMsg.fields)
+                {
+                    if (field.name == "time" || field.name == "t")
+                    {
+                        deskewFlag = 1;
+                        break;
+                    }
+                }
+                if (deskewFlag == -1) //点无时间戳信息
+                {
+                    std::cout<<"点云中的点无时间信息"<<std::endl;
+                    // ROS_WARN("Point cloud timestamp not available, deskew function disabled, system will drift significantly!");
+                    
+                }
+            }
+
+        }
+        else //针对RSHelios 雷达点云的校验
+        {
+            cloudHeader = currentCloudMsg.header;
+            timeScanCur = cloudHeader.stamp.toSec();
+            timeScanEnd = timeScanCur + laserCloudIn->points.back().time;
+            // std::cout<<"当前点云帧开始时间："<<timeScanCur<<",持续时间:"<<laserCloudIn->points.back().time<<std::endl;
+
+            // check dense flag
+            if (laserCloudIn->is_dense == false)
+            {
+                ROS_ERROR("Point cloud is not in dense format, please remove NaN points first!");
+                ros::shutdown();
+            }
+
+            // check ring channel
+            static int ringFlag = 0;
+            if (ringFlag == 0)
+            {
+                ringFlag = -1;
+                for (int i = 0; i < (int)currentCloudMsg.fields.size(); ++i)
+                {
+                    if (currentCloudMsg.fields[i].name == "ring")
+                    {
+                        std::cout<<"点云中有线数信息"<<std::endl;
+                        ringFlag = 1;
+                        break;
+                    }
+                }
+                if (ringFlag == -1)
+                {
+                    ROS_ERROR("Point cloud ring channel not available, please configure your point cloud data!");
+                    std::cout<<"点云中无线数信息"<<std::endl;
+                    ros::shutdown();
+                }
+            }
+
+            // check point time
+            //点的时间校验
+            if (deskewFlag == 0)
+            {
+                deskewFlag = -1;
+                for (auto &field : pl_orig_RSHelios.points)
+                {
+                    if (abs(field.timestamp - pl_orig_RSHelios.points[0].timestamp) >= 1e-6)
+                    {
+                        std::cout<<"点云中的点有时间信息"<<std::endl;
+                        deskewFlag = 1;
+                        break;
+                    }
+                }
+                if (deskewFlag == -1) //点无时间戳信息
+                {
+                    std::cout<<"点云中的点无时间信息"<<std::endl;
+                    // ROS_WARN("Point cloud timestamp not available, deskew function disabled, system will drift significantly!");
+                    
+                }
             }
         }
 
@@ -382,6 +487,8 @@ public:
         odomDeskewInfo();
 
         odomVIODeskewInfo();
+
+        // std::cout<<"deskewInfo end"<<std::endl;
 
         return true;
     }
@@ -672,7 +779,7 @@ public:
             *rotZCur = imuRotZ[imuPointerFront] * ratioFront + imuRotZ[imuPointerBack] * ratioBack;
         }
 
-        std::cout<<"旋转畸变处理"<<std::endl;
+        // std::cout<<"旋转畸变处理"<<std::endl;
     }
 
     //赋值成了0

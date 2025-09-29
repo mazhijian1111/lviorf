@@ -69,6 +69,7 @@ public:
     ros::Publisher pubLaserOdometryIncremental;
     ros::Publisher pubKeyPoses;
     ros::Publisher pubPath;
+    ros::Publisher pubGPSPath;
 
     ros::Publisher pubHistoryKeyFrames;
     ros::Publisher pubIcpKeyFrames;
@@ -160,6 +161,10 @@ public:
     PointType lastGPSPoint; //上一激光帧最近的的GPS位姿
     bool firstGPSPoint = false;
 
+    //滤波使用
+    std::deque<sensor_msgs::NavSatFix> nav_sat_fix_msg_deque;
+    nav_msgs::Path GPSPath;
+
     mapOptimization()
     {
         ISAM2Params parameters;
@@ -172,6 +177,7 @@ public:
         pubLaserOdometryGlobal      = nh.advertise<nav_msgs::Odometry> ("lviorf/mapping/odometry", 1);
         pubLaserOdometryIncremental = nh.advertise<nav_msgs::Odometry> ("lviorf/mapping/odometry_incremental", 1);
         pubPath                     = nh.advertise<nav_msgs::Path>("lviorf/mapping/path", 1);
+        pubGPSPath                  = nh.advertise<nav_msgs::Path>("lviorf/mapping/gps_path", 1);
 
         subCloud = nh.subscribe<lviorf::cloud_info>("lviorf/deskew/cloud_info", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());
         subGPS   = nh.subscribe<sensor_msgs::NavSatFix> (gpsTopic, 200, &mapOptimization::gpsHandler, this, ros::TransportHints().tcpNoDelay());
@@ -242,6 +248,7 @@ public:
     void laserCloudInfoHandler(const lviorf::cloud_infoConstPtr& msgIn)
     {
         // extract time stamp
+        std::cout<<"后端-去畸变点云帧回调函数"<<std::endl;
         timeLaserInfoStamp = msgIn->header.stamp;
         timeLaserInfoCur = msgIn->header.stamp.toSec();
 
@@ -287,7 +294,8 @@ public:
 
     void gpsHandler(const sensor_msgs::NavSatFixConstPtr& gpsMsg)
     {
-        if (gpsMsg->status.status != 0)
+        // std::cout<<"GPS回调"<<std::endl;
+        if (gpsMsg->status.status == 0)
             return;
 
         Eigen::Vector3d trans_local_;
@@ -296,6 +304,22 @@ public:
             first_gps = true;
             gps_trans_.Reset(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude);
             std::cout<<"GPS init: "<<gpsMsg->latitude<<" "<<gpsMsg->longitude<<" "<<gpsMsg->altitude<<std::endl;
+        }
+
+        //增加GPS滤波机制
+        nav_sat_fix_msg_deque.push_back(*gpsMsg);
+        if(nav_sat_fix_msg_deque.size() >= 2)
+        {
+            double d1 = nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-1].altitude - nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-2].altitude;
+            double d2 = nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-1].longitude - nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-2].longitude;
+            double d3 = nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-1].latitude - nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-2].latitude;
+            if(abs(d1) >= 1.0 || abs(d2) >= 0.01 || abs(d3) >= 0.01)
+            {
+                std::cout<<"GPS跳变"<<std::endl;
+                nav_sat_fix_msg_deque.pop_back();
+                return;
+            }
+            nav_sat_fix_msg_deque.pop_front();
         }
 
         gps_trans_.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, trans_local_[0], trans_local_[1], trans_local_[2]);
@@ -309,6 +333,23 @@ public:
         gps_odom.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 0.0, 0.0); //无姿态
         pubGpsOdom.publish(gps_odom);
         gpsQueue.push_back(gps_odom);
+
+        geometry_msgs::PoseStamped pose_stamped;
+        pose_stamped.header.stamp = gpsMsg->header.stamp;
+        pose_stamped.header.frame_id = odometryFrame;
+        pose_stamped.pose.position.x = trans_local_[0];
+        pose_stamped.pose.position.y = trans_local_[1];
+        pose_stamped.pose.position.z = trans_local_[2];
+        pose_stamped.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 0.0, 0.0);
+
+        GPSPath.poses.push_back(pose_stamped);
+        GPSPath.header.stamp = gpsMsg->header.stamp;
+        GPSPath.header.frame_id = odometryFrame;
+        if(GPSPath.poses.size()%20 == 0)
+        {
+            // std::cout<<"pub GPS path, size() = "<<GPSPath.poses.size()<<std::endl;
+            pubGPSPath.publish(GPSPath);
+        }
     }
 
 
@@ -1501,6 +1542,7 @@ public:
             gtsam::Pose3 poseTo   = trans2gtsamPose(transformTobeMapped); //当前帧估计
             gtSAMgraph.add(BetweenFactor<Pose3>(cloudKeyPoses3D->size()-1, cloudKeyPoses3D->size(), poseFrom.between(poseTo), odometryNoise));
             initialEstimate.insert(cloudKeyPoses3D->size(), poseTo);
+            std::cout<<"add lio factor"<<std::endl;
         }
     }
 
@@ -1564,6 +1606,7 @@ public:
     //新的添加GPS因子的机制,20250722增加，20250910修改
     void addGPSFactorNew()
     {
+        gpsQueueOdom = gpsQueue;
         // std::cout<<"start add GPS Factor New"<<std::endl;
         if (gpsQueueOdom.empty())
             return;
@@ -1674,7 +1717,7 @@ public:
             gtSAMgraph.add(gps_factor);
             lastGPSPoint = curGPSPoint;
 
-            // std::cout<<"add new GPS factor!"<<std::endl;
+            std::cout<<"add new GPS factor!"<<std::endl;
         }
 
     }
@@ -1797,14 +1840,14 @@ public:
         addVIOFactor();
 
         // gps factor
-        addGPSFactor();
+        // addGPSFactor();
 
         // addGPSFactorNew();
 
         // loop factor
         addLoopFactor();
 
-        // cout << "****************************************************" << endl;
+        cout << "****************************************************" << endl;
         // gtSAMgraph.print("GTSAM Graph:\n");
 
         // update iSAM
@@ -1968,6 +2011,7 @@ public:
         pose_stamped.pose.orientation.w = q.w();
 
         globalPath.poses.push_back(pose_stamped);
+        ROS_INFO("now pose (x,y,z):%f,%f,%f",pose_in.x,pose_in.y,pose_in.z);
     }
 
     //发布激光里程计

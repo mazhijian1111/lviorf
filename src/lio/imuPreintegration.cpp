@@ -531,7 +531,13 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
 
         //IMU位姿转换，转到雷达坐标系下
-        sensor_msgs::Imu thisImu = imuConverter(*imu_raw);
+        // sensor_msgs::Imu thisImu = imuConverter(*imu_raw);
+
+
+        //厦门数据，IMU位姿转换，转到雷达坐标系下
+        sensor_msgs::Imu thisImu = imuConverterInXiamen(*imu_raw);
+
+        
 
         imuQueOpt.push_back(thisImu);
         imuQueImu.push_back(thisImu);

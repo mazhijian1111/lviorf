@@ -26,7 +26,7 @@ lviorf:
   savePCDDirectory: "/MyResearch_ws/lviorf/src/lviorf/pcd/"        # in your home folder, starts and ends with "/". Warning: the code deletes "LOAM" folder then recreates it. See "mapOptimization" for implementation
 
   # Sensor Settings
-  sensor: velodyne                            # lidar sensor type, 'velodyne' or 'ouster' or 'livox' or 'robosense'
+  sensor: velodyne                            # lidar sensor type, 'velodyne' or 'ouster' or 'livox' or 'robosense' or 'RSHelios'
   N_SCAN: 64                                  # number of lidar channel (i.e., Velodyne/Ouster: 16, 32, 64, 128, Livox Horizon: 6)
   Horizon_SCAN: 1800                          # lidar horizontal resolution (Velodyne:1800, Ouster:512,1024,2048, Livox Horizon: 4000)
   downsampleRate: 2                           # default: 1. Downsample your data if too many points(line). i.e., 16 = 64 / 4, 16 = 16 / 1
