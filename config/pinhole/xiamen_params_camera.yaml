@@ -28,18 +28,18 @@ model_type: PINHOLE
 camera_name: camera
 
 # Mono camera config
-image_width: 1226
-image_height: 370
+image_width: 1920
+image_height: 1080
 distortion_parameters:
-   k1: 0
-   k2: 0
-   p1: 0
-   p2: 0
+   k1: -6.4491587843
+   k2: 64.9696548807
+   p1: 0.0012128361
+   p2: 0.0002983553
 projection_parameters:
-   fx: 7.070912e+02
-   fy: 7.070912e+02
-   cx: 6.018873e+02
-   cy: 1.831104e+02
+   fx: 1934.8593192748
+   fy: 1935.5269145697
+   cx: 946.4455094856
+   cy: 481.4320261366
 
 fisheye_mask: "/config/fisheye_mask_720x540.jpg"
 
