@@ -672,7 +672,7 @@ public:
             *rotZCur = imuRotZ[imuPointerFront] * ratioFront + imuRotZ[imuPointerBack] * ratioBack;
         }
 
-        std::cout<<"旋转畸变处理"<<std::endl;
+        // std::cout<<"旋转畸变处理"<<std::endl;
     }
 
     //赋值成了0
@@ -688,7 +688,7 @@ public:
         
         if(deskewFlag == 1)
         {
-            std::cout<<"时间差："<<(timeScanEnd - timeScanCur)<<std::endl;
+            // std::cout<<"时间差："<<(timeScanEnd - timeScanCur)<<std::endl;
             float ratio = relTime / (timeScanEnd - timeScanCur);
 
             *posXCur = ratio * odomIncreX;
