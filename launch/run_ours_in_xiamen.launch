@@ -6,7 +6,7 @@
     <rosparam file="$(find lviorf)/config/pinhole/xiamen_params_lidar.yaml" command="load" />
     
     <!-- VINS config -->
-    <param name="vins_config_file" type="string" value="$(find lviorf)/config/pinhole/kitti_params_camera.yaml" />
+    <param name="vins_config_file" type="string" value="$(find lviorf)/config/pinhole/xiamen_params_camera.yaml" />
 
     <rosparam command="load" file="$(find lviorf)/config/vlp_gps.yaml" />
 

@@ -128,6 +128,7 @@ getMeasurements()
         std::vector<sensor_msgs::ImuConstPtr> IMUs;
         while (imu_buf.front()->header.stamp.toSec() < img_msg->header.stamp.toSec() + estimator.td)
         {
+            std::cout<<"image_time:"<<setprecision(15)<<img_msg->header.stamp.toSec()<<",imu_time:"<<setprecision(15)<<imu_buf.front()->header.stamp.toSec()<<std::endl;
             IMUs.emplace_back(imu_buf.front());
             imu_buf.pop();
         }
@@ -135,12 +136,16 @@ getMeasurements()
         if (IMUs.empty())
             ROS_WARN("no imu between two image");
         measurements.emplace_back(IMUs, img_msg);
+        std::cout<<"IMUs.size() = "<<IMUs.size()<<std::endl;
     }
+
     return measurements;
 }
 
 void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
 {
+    // std::cout<<"视觉后端订阅到IMU话题"<<std::endl;
+    std::cout<<"imu_msg.stamp : "<<setprecision(15)<<imu_msg->header.stamp.toSec()<<std::endl;
     if (imu_msg->header.stamp.toSec() <= last_imu_t)
     {
         ROS_WARN("imu message in disorder!");
@@ -148,17 +153,32 @@ void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
     }
     last_imu_t = imu_msg->header.stamp.toSec();
 
+    // 1. 创建可修改的副本
+    sensor_msgs::Imu modified_imu = *imu_msg;
+    
+    // 2. 进行数据修改
+    modified_imu.linear_acceleration.x /= 125.0;
+    modified_imu.linear_acceleration.y /= 125.0;
+    modified_imu.linear_acceleration.z /= 125.0;
+    modified_imu.angular_velocity.x /= 125.0;
+    modified_imu.angular_velocity.y /= 125.0;
+    modified_imu.angular_velocity.z /= 125.0;
+    
+    // 3. 转换回 const sensor_msgs::ImuConstPtr
+    sensor_msgs::ImuConstPtr final_imu_msg = boost::make_shared<const sensor_msgs::Imu>(modified_imu);
+    
+
     m_buf.lock();
-    imu_buf.push(imu_msg);
+    imu_buf.push(final_imu_msg);
     m_buf.unlock();
     con.notify_one();
 
-    last_imu_t = imu_msg->header.stamp.toSec();
+    last_imu_t = final_imu_msg->header.stamp.toSec();
 
     {
         std::lock_guard<std::mutex> lg(m_state);
-        predict(imu_msg);
-        std_msgs::Header header = imu_msg->header;
+        predict(final_imu_msg);
+        std_msgs::Header header = final_imu_msg->header;
         if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
             pubLatestOdometry(tmp_P, tmp_Q, tmp_V, header, estimator.failureCount);
     }
@@ -209,14 +229,19 @@ void gps_odom_callback(const nav_msgs::Odometry::ConstPtr& gps_odom_msg)
 
 void feature_callback(const sensor_msgs::PointCloudConstPtr &feature_msg)
 {
+    std::cout<<"feature_msg.stamp : "<<setprecision(15)<<feature_msg->header.stamp.toSec()<<std::endl;
+    // std::cout<<"订阅到视觉前端跟踪到的视觉特征点"<<std::endl;
     if (!init_feature)
     {
         //skip the first detected feature, which doesn't contain optical flow speed
         init_feature = 1;
         return;
     }
+
     m_buf.lock();
     feature_buf.push(feature_msg);
+    std::cout<<"feature_buf.size() = "<< feature_buf.size()<<std::endl;
+    // ROS_INFO("feature_buf.size()= %d",(int)feature_buf.size());
     m_buf.unlock();
     con.notify_one();
 }
@@ -254,6 +279,9 @@ void process()
             return (measurements = getMeasurements()).size() != 0;
                  });
         lk.unlock();
+
+        // ROS_INFO("measurements.size() = %d",(int)measurements.size());
+        std::cout<<"measurements.size() = "<<measurements.size()<<std::endl;
 
         m_estimator.lock();
         //使用IMU数据预测当前图像帧时刻的位姿
@@ -448,7 +476,8 @@ int main(int argc, char **argv)
 
     ros::Subscriber sub_imu     = n.subscribe(IMU_TOPIC,      5000, imu_callback,  ros::TransportHints().tcpNoDelay());
     ros::Subscriber sub_odom    = n.subscribe("odometry/imu_incremental", 5000, odom_callback);
-    ros::Subscriber sub_image   = n.subscribe(PROJECT_NAME + "/vins/feature/feature", 1, feature_callback);
+    // ros::Subscriber sub_image   = n.subscribe("/lidar_front_right_helios32", 10, feature_callback,ros::TransportHints().tcpNoDelay());
+    ros::Subscriber sub_image   = n.subscribe(PROJECT_NAME + "/vins/feature/feature", 10, feature_callback);
     ros::Subscriber sub_restart = n.subscribe(PROJECT_NAME + "/vins/feature/restart", 1, restart_callback);
 
     //20250725 add gps odometry

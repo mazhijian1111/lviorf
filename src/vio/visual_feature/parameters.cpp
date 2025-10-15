@@ -37,6 +37,7 @@ void readParameters(ros::NodeHandle &n)
 {
     std::string config_file;
     n.getParam("vins_config_file", config_file);
+    std::cout<<"获取相机参数配置文件:"<<config_file<<std::endl;
     cv::FileStorage fsSettings(config_file, cv::FileStorage::READ);
     if(!fsSettings.isOpened())
     {

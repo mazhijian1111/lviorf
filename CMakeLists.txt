@@ -132,6 +132,15 @@ target_link_libraries(${PROJECT_NAME}_imuPreintegration Boost::timer ${catkin_LI
 
 ######################
 # <!-- lviorf_yjz_lucky_boy -->
+
+
+#Lidar_preprocess
+file(GLOB lidar_preprocess_files
+  "src/lidar_preprocess/lidar_fusion_node.cpp"
+)
+
+
+
 # VIO
 ######################
 file(GLOB visual_feature_files
@@ -153,6 +162,13 @@ file(GLOB visual_loop_files
     "src/vio/visual_loop/ThirdParty/DVision/*.cpp"
     "src/vio/visual_feature/camera_models/*.cc"
 )
+
+# Visual Feature Tracker
+add_executable(lidar_fusion_node ${lidar_preprocess_files})
+target_link_libraries(lidar_fusion_node ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
+
+
+
 # Visual Feature Tracker
 add_executable(${PROJECT_NAME}_visual_feature ${visual_feature_files})
 target_link_libraries(${PROJECT_NAME}_visual_feature ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})

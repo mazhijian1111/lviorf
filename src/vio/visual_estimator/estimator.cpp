@@ -122,6 +122,8 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                              const std_msgs::Header &header)
 {
     // Add new image features
+    std::cout<<"new image coming ------------------------------------------"<<std::endl;
+    std::cout<<"Adding feature points "<<image.size()<<std::endl;
     ROS_INFO("new image coming ------------------------------------------");
     ROS_INFO("Adding feature points %lu", image.size());
     if (f_manager.addFeatureCheckParallax(frame_count, image, td))

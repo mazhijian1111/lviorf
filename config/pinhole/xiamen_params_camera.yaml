@@ -5,7 +5,7 @@ project_name: "lviorf"
 
 #common parameters
 imu_topic: "/bynav/imu/data_raw"  #IMU话题
-image_topic: "/kitti/camera_color_left/image_raw"   # 图像话题
+image_topic: "/m_gmsl_1/image_compressed"   # 图像话题
 point_cloud_topic: "lviorf/lidar/deskew/cloud_deskewed"
 
 # Lidar Params
@@ -86,7 +86,7 @@ keyframe_parallax: 10.0  # keyframe selection threshold (pixel)
 
 #unsynchronization parameters
 estimate_td: 0           # online estimate time offset between camera and imu
-td: 0                    # initial value of time offset. unit: s. readed image clock + td = real image clock (IMU clock)
+td: 0.01                   # initial value of time offset. unit: s. readed image clock + td = real image clock (IMU clock)
 
 #rolling shutter parameters
 rolling_shutter: 0       # 0: global shutter camera, 1: rolling shutter camera

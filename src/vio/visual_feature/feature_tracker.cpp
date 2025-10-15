@@ -171,6 +171,7 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
     cur_pts = forw_pts;
     undistortedPoints();
     prev_time = cur_time;
+    // std::cout<<"跟踪到的视觉特征点数量："<<forw_pts.size()<<std::endl;
 }
 
 void FeatureTracker::rejectWithF()
