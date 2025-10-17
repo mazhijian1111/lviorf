@@ -8,6 +8,9 @@
     <node pkg="tf2_ros" type="static_transform_publisher" name="lidar_front_right_tf"
           args="7.1574 -1.44 1.9095 0.00790578 -0.0086239 -0.19297626 0.98113368 base_link rslidar"/>
     
+    <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="map_2_odom_tf"
+        args="0 0 0 0 0 0 0 map odom"/> -->
+    
     <!-- Lidar odometry param -->
     <rosparam file="$(find lviorf)/config/pinhole/xiamen_params_lidar.yaml" command="load" />
     

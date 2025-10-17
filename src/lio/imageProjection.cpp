@@ -619,6 +619,7 @@ public:
     //激光里程计信息处理
     void odomDeskewInfo()
     {
+        //取用IMUpreintegration节点的IMU与后端里程计融合的结果
         cloudInfo.odomAvailable = false;
         static float sync_diff_time = (imuRate >= 300) ? 0.01 : 0.20; //同步时间差
 
@@ -837,9 +838,9 @@ public:
             // std::cout<<"时间差："<<(timeScanEnd - timeScanCur)<<std::endl;
             float ratio = relTime / (timeScanEnd - timeScanCur);
 
-            *posXCur = ratio * odomIncreX;
-            *posYCur = ratio * odomIncreY;
-            *posZCur = ratio * odomIncreZ;
+            // *posXCur = ratio * odomIncreX;
+            // *posYCur = ratio * odomIncreY;
+            // *posZCur = ratio * odomIncreZ;
         }
         /******************************************************************************/
     }
@@ -863,6 +864,7 @@ public:
 
         if (firstPointFlag == true)
         {
+            //该帧的第一个点
             transStartInverse = (pcl::getTransformation(posXCur, posYCur, posZCur, rotXCur, rotYCur, rotZCur)).inverse();
             firstPointFlag = false;
         }
@@ -871,7 +873,7 @@ public:
         Eigen::Affine3f transFinal = pcl::getTransformation(posXCur, posYCur, posZCur, rotXCur, rotYCur, rotZCur);
         Eigen::Affine3f transBt = transStartInverse * transFinal;
 
-        //对点进行位姿变换
+        //对点进行位姿变换，变换到第一个点上
         PointType newPoint;
         newPoint.x = transBt(0,0) * point->x + transBt(0,1) * point->y + transBt(0,2) * point->z + transBt(0,3);
         newPoint.y = transBt(1,0) * point->x + transBt(1,1) * point->y + transBt(1,2) * point->z + transBt(1,3);

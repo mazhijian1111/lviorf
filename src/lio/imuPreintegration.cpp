@@ -79,7 +79,7 @@ public:
         //订阅激光里程计（lio后端的）
         subLaserOdometry = nh.subscribe<nav_msgs::Odometry>("lviorf/mapping/odometry", 5, &TransformFusion::lidarOdometryHandler, this, ros::TransportHints().tcpNoDelay());
         
-        //订阅里程计增量（两帧之间），来自后端优化
+        //订阅里程计增量（两帧之间），来自本节点优化
         subImuOdometry   = nh.subscribe<nav_msgs::Odometry>(odomTopic+"_incremental", 2000, &TransformFusion::imuOdometryHandler,   this, ros::TransportHints().tcpNoDelay());
 
         //发布IMU里程计
@@ -106,7 +106,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(mtx);
 
-        lidarOdomAffine = odom2affine(*odomMsg);
+        lidarOdomAffine = odom2affine(*odomMsg); //激光里程计队列
 
         lidarOdomTime = odomMsg->header.stamp.toSec();
     }
@@ -114,7 +114,7 @@ public:
     //IMU里程计增量回调函数
     void imuOdometryHandler(const nav_msgs::Odometry::ConstPtr& odomMsg)
     {
-        std::cout<<"订阅到odometry/imu_incremental话题"<<std::endl;
+        // std::cout<<"订阅到odometry/imu_incremental话题"<<std::endl;
         //发布odom系到map系的静态TF，默认是同一个坐标系
         static tf::TransformBroadcaster tfMap2Odom;
         static tf::Transform map_to_odom = tf::Transform(tf::createQuaternionFromRPY(0, 0, 0), tf::Vector3(0, 0, 0));
@@ -141,7 +141,7 @@ public:
         Eigen::Affine3f imuOdomAffineFront = odom2affine(imuOdomQueue.front());
         Eigen::Affine3f imuOdomAffineBack = odom2affine(imuOdomQueue.back()); //队列最后的一帧？
         Eigen::Affine3f imuOdomAffineIncre = imuOdomAffineFront.inverse() * imuOdomAffineBack;//IMU里程计增量
-        //转到雷达系上？
+        //雷达里程计+当前雷达里程计与下一帧之间的IMU里程计
         Eigen::Affine3f imuOdomAffineLast = lidarOdomAffine * imuOdomAffineIncre; //imuOdomAffineLast是当前帧IMU里程计相对于第一帧IMU里程计的变换
         float x, y, z, roll, pitch, yaw;
         pcl::getTranslationAndEulerAngles(imuOdomAffineLast, x, y, z, roll, pitch, yaw);
@@ -154,7 +154,7 @@ public:
         laserOdometry.pose.pose.position.z = z;
         laserOdometry.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(roll, pitch, yaw);
         pubImuOdometry.publish(laserOdometry); //发布IMU里程计
-        std::cout<<"发布IMU预积分里程计"<<std::endl;
+        // std::cout<<"发布IMU预积分里程计"<<std::endl;
 
         // publish tf
         //odom到base_link之间的TF
@@ -596,6 +596,7 @@ public:
         odometry.pose.covariance[7] = imuGravity;
 
         pubImuOdometry.publish(odometry); //发布上一帧与当前帧的增量里程计
+        // std::cout<<"发布/odometry/imu_incremental话题"<<std::endl;
     }
 };
 

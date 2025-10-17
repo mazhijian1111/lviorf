@@ -166,6 +166,9 @@ public:
     std::deque<sensor_msgs::NavSatFix> nav_sat_fix_msg_deque;
     nav_msgs::Path GPSPath;
 
+    //雷达关键帧时间戳
+    double Curlidarkeyframestamp,Lastlidarkeyframestamp;
+
     mapOptimization()
     {
         ISAM2Params parameters;
@@ -252,6 +255,7 @@ public:
         std::cout<<"后端优化点云帧回调函数"<<std::endl;
         timeLaserInfoStamp = msgIn->header.stamp;
         timeLaserInfoCur = msgIn->header.stamp.toSec();
+        Curlidarkeyframestamp = timeLaserInfoCur;
 
         // extract info and feature cloud
         cloudInfo = *msgIn;
@@ -294,7 +298,7 @@ public:
         currentPose.header.stamp = ros::Time::now();
         currentPose.header.frame_id = "map";
         pubCurrentPose.publish(currentPose); // publish current pose
-        std::cout<<"current pose:"<<currentPose.pose.position<<","<<currentPose.pose.orientation<<std::endl;
+        // std::cout<<"current pose:"<<currentPose.pose.position<<","<<currentPose.pose.orientation<<std::endl;
 
     }
 
@@ -1687,15 +1691,24 @@ public:
         float x, y, z, roll, pitch, yaw;
         pcl::getTranslationAndEulerAngles(transBetween, x, y, z, roll, pitch, yaw);
 
-        std::cout<<"saveFrame()?，两帧之间距离为:"<<sqrt(x*x + y*y + z*z)<<","<<abs(roll)<<","<<abs(pitch)<<","<<abs(yaw)<<std::endl;
+        // std::cout<<"saveFrame()?，两帧之间距离为:"<<sqrt(x*x + y*y + z*z)<<","<<abs(roll)<<","<<abs(pitch)<<","<<abs(yaw)<<std::endl;
 
-        if (abs(roll)  < surroundingkeyframeAddingAngleThreshold &&
+        //通过时间判断是否添加关键帧,相差1.0s为关键帧
+        if(abs(Curlidarkeyframestamp - Lastlidarkeyframestamp) > 1.0)
+        {
+            std::cout<<"检测到关键帧，两关键帧之间的时间差为:"<<Curlidarkeyframestamp - Lastlidarkeyframestamp<<std::endl;
+            Lastlidarkeyframestamp = Curlidarkeyframestamp;
+            return true;
+        }
+
+        if ((abs(roll)  < surroundingkeyframeAddingAngleThreshold &&
             abs(pitch) < surroundingkeyframeAddingAngleThreshold && 
             abs(yaw)   < surroundingkeyframeAddingAngleThreshold &&
-            sqrt(x*x + y*y + z*z) < surroundingkeyframeAddingDistThreshold)
+            sqrt(x*x + y*y + z*z) < surroundingkeyframeAddingDistThreshold))
             return false;
 
         std::cout<<"检测到关键帧，两帧之间距离为:"<<sqrt(x*x + y*y + z*z)<<std::endl;
+        Lastlidarkeyframestamp = Curlidarkeyframestamp;
         return true;
     }
 
@@ -2016,7 +2029,12 @@ public:
     void saveKeyFramesAndFactor()
     {
         if (saveFrame() == false)
+        {
+            std::cout<<"当前激光帧为非关键帧"<<std::endl;
             return;
+        }
+        std::cout<<"当前激光帧为关键帧"<<std::endl;
+        cout << "*************************Begin backend optimization***************************" << endl;
 
         // lio odom factor
         addOdomFactor();
@@ -2032,7 +2050,7 @@ public:
         // loop factor
         addLoopFactor();
 
-        cout << "****************************************************" << endl;
+        
         // gtSAMgraph.print("GTSAM Graph:\n");
 
         // update iSAM
@@ -2143,7 +2161,7 @@ public:
         /***************************20250801：转换全局定位结果******************************** */
 
 
-
+        cout << "*************************End backend optimization***************************" << endl;
     }
 
     //如果检测到闭环，则更新关键帧位姿，并更新轨迹
@@ -2196,7 +2214,7 @@ public:
         pose_stamped.pose.orientation.w = q.w();
 
         globalPath.poses.push_back(pose_stamped);
-        ROS_INFO("now pose (x,y,z):%f,%f,%f",pose_in.x,pose_in.y,pose_in.z);
+        ROS_INFO("pose after optimize (x,y,z):%f,%f,%f",pose_in.x,pose_in.y,pose_in.z);
     }
 
     //发布激光里程计

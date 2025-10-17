@@ -11,7 +11,7 @@ lviorf:
   # gpsTopic: "/gps/fix11"  
 
   # Frames
-  lidarFrame: "rslidar"
+  lidarFrame: "base_link"
   baselinkFrame: "base_link"
   odometryFrame: "odom"
   mapFrame: "map"
@@ -38,7 +38,7 @@ lviorf:
   # IMU Settings
   # imuType: 0                                  # 0: 6-axis  1: 9-axis
   imuType: 1                                    #20250908修改 0: 6-axis  1: 9-axis
-  imuRate: 100.0
+  imuRate: 60.0
   imuAccNoise: 3.9939570888238808e-03
   imuGyrNoise: 1.5636343949698187e-03
   imuAccBiasN: 6.4356659353532566e-05
@@ -71,7 +71,7 @@ lviorf:
   mappingProcessInterval: 0.0                  # seconds, regulate mapping frequency
 
   # Surrounding map
-  surroundingkeyframeAddingDistThreshold: 0.3   # meters, regulate keyframe adding threshold
+  surroundingkeyframeAddingDistThreshold: 0.15   # meters, regulate keyframe adding threshold
   surroundingkeyframeAddingAngleThreshold: 0.1  # radians, regulate keyframe adding threshold
   surroundingKeyframeDensity: 1.0               # meters, downsample surrounding keyframe poses   
   surroundingKeyframeSearchRadius: 50.0         # meters, within n meters scan-to-map optimization (when loop closure disabled)
