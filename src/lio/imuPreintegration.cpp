@@ -79,8 +79,8 @@ public:
         //订阅激光里程计（lio后端的）
         subLaserOdometry = nh.subscribe<nav_msgs::Odometry>("lviorf/mapping/odometry", 5, &TransformFusion::lidarOdometryHandler, this, ros::TransportHints().tcpNoDelay());
         
-        //订阅IMU里程计增量（两帧之间），这是从哪里来的？
-        subImuOdometry   = nh.subscribe<nav_msgs::Odometry>(odomTopic+"_incremental",   2000, &TransformFusion::imuOdometryHandler,   this, ros::TransportHints().tcpNoDelay());
+        //订阅里程计增量（两帧之间），来自后端优化
+        subImuOdometry   = nh.subscribe<nav_msgs::Odometry>(odomTopic+"_incremental", 2000, &TransformFusion::imuOdometryHandler,   this, ros::TransportHints().tcpNoDelay());
 
         //发布IMU里程计
         pubImuOdometry   = nh.advertise<nav_msgs::Odometry>(odomTopic, 2000);
@@ -114,6 +114,7 @@ public:
     //IMU里程计增量回调函数
     void imuOdometryHandler(const nav_msgs::Odometry::ConstPtr& odomMsg)
     {
+        std::cout<<"订阅到odometry/imu_incremental话题"<<std::endl;
         //发布odom系到map系的静态TF，默认是同一个坐标系
         static tf::TransformBroadcaster tfMap2Odom;
         static tf::Transform map_to_odom = tf::Transform(tf::createQuaternionFromRPY(0, 0, 0), tf::Vector3(0, 0, 0));
@@ -153,6 +154,7 @@ public:
         laserOdometry.pose.pose.position.z = z;
         laserOdometry.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(roll, pitch, yaw);
         pubImuOdometry.publish(laserOdometry); //发布IMU里程计
+        std::cout<<"发布IMU预积分里程计"<<std::endl;
 
         // publish tf
         //odom到base_link之间的TF
@@ -531,11 +533,11 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
 
         //IMU位姿转换，转到雷达坐标系下
-        // sensor_msgs::Imu thisImu = imuConverter(*imu_raw);
+        sensor_msgs::Imu thisImu = imuConverter(*imu_raw);
 
 
         //厦门数据，IMU位姿转换，转到雷达坐标系下
-        sensor_msgs::Imu thisImu = imuConverterInXiamen(*imu_raw);
+        // sensor_msgs::Imu thisImu = imuConverterInXiamen(*imu_raw);
 
         
 

@@ -7,23 +7,14 @@
     <!-- 后左雷达 -->
     <node pkg="tf2_ros" type="static_transform_publisher" name="lidar_back_left_tf"
           args="-7.23635619 1.0377513 1.91371889 -0.02002174 0.00128006 0.96825324 0.2491649 base_link lidar1"/>
-    
-    <!-- 后上雷达 -->
-    <node pkg="tf2_ros" type="static_transform_publisher" name="lidar_back_up_tf"
-          args="-7.19333273 -0.02315836 1.93911872 0.53487951 -0.4658788 0.50148365 0.49535341 base_link lidar2"/>
-    
+
     <!-- 前右雷达 -->
     <node pkg="tf2_ros" type="static_transform_publisher" name="lidar_front_right_tf"
-          args="7.1574 -1.44 1.9095 0.00790578 -0.0086239 -0.19297626 0.98113368 base_link lidar3"/>
+          args="7.1574 -1.44 1.9095 0.00790578 -0.0086239 -0.19297626 0.98113368 base_link lidar2"/>
     
-    <!-- 前上雷达
-    <node pkg="tf2_ros" type="static_transform_publisher" name="lidar_front_up_tf"
-          args="7.04935075 1.54129612 1.98761539 -0.48828324 -0.51029573 -0.47128151 0.52827217 base_link lidar4"/> -->
-
- 
-    <node pkg="tf2_ros" type="static_transform_publisher" 
+    <!-- <node pkg="tf2_ros" type="static_transform_publisher" 
         name="rslidar_tf_publisher"
-        args="0 0 0 0 0 0 base_link rslidar" />
+        args="0 0 0 0 0 0 base_link rslidar" /> -->
 
     <arg name="use_rviz" default="false"/>  
     <arg name="rviz_config" default="$(find lviorf)/config/lidar_preprocess/my_config.rviz"/>

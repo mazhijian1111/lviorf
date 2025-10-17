@@ -7,10 +7,15 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.h>
 #include <vector>
+#include <sensor_msgs/PointCloud2.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/filters/filter.h>
+
 using namespace sensor_msgs;
 using namespace message_filters;
 
-typedef sync_policies::ApproximateTime<PointCloud2, PointCloud2, PointCloud2, PointCloud2, PointCloud2, PointCloud2, PointCloud2, PointCloud2> SyncPolicy;
+typedef sync_policies::ApproximateTime<PointCloud2, PointCloud2> SyncPolicy;
 namespace RSHelios_ros
 {
     // rslidar和velodyne的格式有微小的区别
@@ -26,7 +31,11 @@ namespace RSHelios_ros
     } EIGEN_ALIGN16;
 }
 POINT_CLOUD_REGISTER_POINT_STRUCT(RSHelios_ros::RsPointXYZIRT,
-                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(uint16_t, ring, ring)(double, timestamp, timestamp))
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(std::uint16_t, ring, ring)(double, timestamp, timestamp))
+
+
+
+
 class LidarFusion
 {
 public:
@@ -37,83 +46,45 @@ public:
         nh.param<bool>("preprocess/transform_frame_id", transform_frame_id, false);
         nh.param<bool>("preprocess/CompressedImage", CompressedImage, false);
         nh.param<bool>("preprocess/lidar_back_left_helios32", lidar_back_left_helios32, false);
-        nh.param<bool>("preprocess/lidar_back_up_helios32", lidar_back_up_helios32, false);
         nh.param<bool>("preprocess/lidar_front_right_helios32", lidar_front_right_helios32, false);
-        nh.param<bool>("preprocess/lidar_front_up_helios32", lidar_front_up_helios32, false);
-        nh.param<bool>("preprocess/rslidar_points_airy_front", rslidar_points_airy_front, false);
-        nh.param<bool>("preprocess/rslidar_points_airy_rear", rslidar_points_airy_rear, false);
-        nh.param<bool>("preprocess/rslidar_points_m1p_front", rslidar_points_m1p_front, false);
-        nh.param<bool>("preprocess/rslidar_points_m1p_rear", rslidar_points_m1p_rear, false);
+
 
         // 初始化8个雷达的订阅和发布
         if (transform_frame_id)
         {                                                                                     // 消息转换，区分frame id
             pubs_.push_back(nh.advertise<PointCloud2>("/lidar_back_left_helios32_new", 1));   // 创建发布者
-            pubs_.push_back(nh.advertise<PointCloud2>("/lidar_back_up_helios32_new", 1));     // 创建发布者
             pubs_.push_back(nh.advertise<PointCloud2>("/lidar_front_right_helios32_new", 1)); // 创建发布者
-            pubs_.push_back(nh.advertise<PointCloud2>("/lidar_front_up_helios32_new", 1));    // 创建发布者
-            pubs_.push_back(nh.advertise<PointCloud2>("/rslidar_points_airy_front_new", 1));  // 创建发布者
-            pubs_.push_back(nh.advertise<PointCloud2>("/rslidar_points_airy_rear_new", 1));   // 创建发布者
-            pubs_.push_back(nh.advertise<PointCloud2>("/rslidar_points_m1p_front_new", 1));   // 创建发布者
-            pubs_.push_back(nh.advertise<PointCloud2>("/rslidar_points_m1p_rear_new", 1));    // 创建发布者
+
 
             subs_.push_back(nh.subscribe<PointCloud2>(
                 "/lidar_back_left_helios32", 1,
                 boost::bind(&LidarFusion::cloudCallback, this, _1, 1))); // 创建订阅者
             subs_.push_back(nh.subscribe<PointCloud2>(
-                "/lidar_back_up_helios32", 1,
-                boost::bind(&LidarFusion::cloudCallback, this, _1, 2))); // 创建订阅者
-            subs_.push_back(nh.subscribe<PointCloud2>(
                 "/lidar_front_right_helios32", 1,
-                boost::bind(&LidarFusion::cloudCallback, this, _1, 3))); // 创建订阅者
-            subs_.push_back(nh.subscribe<PointCloud2>(
-                "/lidar_front_up_helios32", 1,
-                boost::bind(&LidarFusion::cloudCallback, this, _1, 4))); // 创建订阅者
-            subs_.push_back(nh.subscribe<PointCloud2>(
-                "/rslidar_points_airy_front", 1,
-                boost::bind(&LidarFusion::cloudCallback, this, _1, 5))); // 创建订阅者
-            subs_.push_back(nh.subscribe<PointCloud2>(
-                "/rslidar_points_airy_rear", 1,
-                boost::bind(&LidarFusion::cloudCallback, this, _1, 6))); // 创建订阅者
-            subs_.push_back(nh.subscribe<PointCloud2>(
-                "/rslidar_points_m1p_front", 1,
-                boost::bind(&LidarFusion::cloudCallback, this, _1, 7))); // 创建订阅者
-            subs_.push_back(nh.subscribe<PointCloud2>(
-                "/rslidar_points_m1p_rear", 1,
-                boost::bind(&LidarFusion::cloudCallback, this, _1, 8))); // 创建订阅者
+                boost::bind(&LidarFusion::cloudCallback, this, _1, 2))); // 创建订阅者
+
 
             sub_back_left_.subscribe(nh, "/lidar_back_left_helios32_new", 1);
-            sub_back_up_.subscribe(nh, "/lidar_back_up_helios32_new", 1);
+            // sub_back_up_.subscribe(nh, "/lidar_back_up_helios32_new", 1);
             sub_front_right_.subscribe(nh, "/lidar_front_right_helios32_new", 1);
-            sub_front_up_.subscribe(nh, "/lidar_front_up_helios32_new", 1);
 
-            sub_airy_front_.subscribe(nh, "/rslidar_points_airy_front_new", 1);
-            sub_airy_rear_.subscribe(nh, "/rslidar_points_airy_rear_new", 1);
-            sub_m1p_front_.subscribe(nh, "/rslidar_points_m1p_front_new", 1);
-            sub_m1p_rear_.subscribe(nh, "/rslidar_points_m1p_rear_new", 1);
         }
         else
         {
             // 初始化订阅者
             sub_back_left_.subscribe(nh, "/lidar_back_left_helios32", 1);
-            sub_back_up_.subscribe(nh, "/lidar_back_up_helios32", 1);
+            // sub_back_up_.subscribe(nh, "/lidar_back_up_helios32", 1);
             sub_front_right_.subscribe(nh, "/lidar_front_right_helios32", 1);
-            sub_front_up_.subscribe(nh, "/lidar_front_up_helios32", 1);
 
-            sub_airy_front_.subscribe(nh, "/rslidar_points_airy_front", 1);
-            sub_airy_rear_.subscribe(nh, "/rslidar_points_airy_rear", 1);
-            sub_m1p_front_.subscribe(nh, "/rslidar_points_m1p_front", 1);
-            sub_m1p_rear_.subscribe(nh, "/rslidar_points_m1p_rear", 1);
         }
 
         // 创建同步策略
         sync_.reset(new Synchronizer<SyncPolicy>(SyncPolicy(10),
-                                                 sub_back_left_, sub_back_up_,
-                                                 sub_front_right_, sub_front_up_,
-                                                 sub_airy_front_, sub_airy_rear_,
-                                                 sub_m1p_front_, sub_m1p_rear_));
+                                                 sub_back_left_, 
+                                                 sub_front_right_
+                                                 ));
         sync_->registerCallback(boost::bind(&LidarFusion::fusionCallback,
-                                            this, _1, _2, _3, _4, _5, _6, _7, _8));
+                                            this, _1, _2));
 
         // 初始化发布者
         pub_ = nh.advertise<PointCloud2>("/fused_pointcloud", 1);
@@ -124,14 +95,7 @@ public:
     }
 
 private:
-    void fusionCallback(const PointCloud2ConstPtr &cloud1,
-                        const PointCloud2ConstPtr &cloud2,
-                        const PointCloud2ConstPtr &cloud3,
-                        const PointCloud2ConstPtr &cloud4,
-                        const PointCloud2ConstPtr &cloud5,
-                        const PointCloud2ConstPtr &cloud6,
-                        const PointCloud2ConstPtr &cloud7,
-                        const PointCloud2ConstPtr &cloud8)
+    void fusionCallback(const PointCloud2ConstPtr &cloud1,const PointCloud2ConstPtr &cloud3)
     {
         try
         {
@@ -140,51 +104,19 @@ private:
             {
                 // 转换点云到基坐标系,rslidar数据
                 auto t1 = transformCloud_rslidar(cloud1, "base_link");
-                auto t2 = transformCloud_rslidar(cloud2, "base_link");
                 auto t3 = transformCloud_rslidar(cloud3, "base_link");
-                auto t4 = transformCloud_rslidar(cloud4, "base_link");
 
-                auto t5 = transformCloud_rslidar(cloud5, "base_link");
-                auto t6 = transformCloud_rslidar(cloud6, "base_link");
-                auto t7 = transformCloud_rslidar(cloud7, "base_link");
-                auto t8 = transformCloud_rslidar(cloud8, "base_link");
+                // auto t8 = transformCloud_rslidar(cloud8, "base_link");
                 pcl::PointCloud<RSHelios_ros::RsPointXYZIRT> fused_cloud;
                 if (lidar_back_left_helios32)
                 {
                     fused_cloud += *t1;
                 }
-                if (lidar_back_up_helios32)
-                {
-                    fused_cloud += *t2;
-                }
                 if (lidar_front_right_helios32)
                 {
                     fused_cloud += *t3;
                 }
-                if (lidar_front_up_helios32)
-                {
-                    fused_cloud += *t4;
-                }
 
-                if (rslidar_points_airy_front)
-                {
-                    fused_cloud += *t5;
-                }
-                if (rslidar_points_airy_rear)
-                {
-                    fused_cloud += *t6;
-                }
-                if (rslidar_points_m1p_front)
-                {
-                    fused_cloud += *t7;
-                }
-                if (rslidar_points_m1p_rear)
-                {
-                    fused_cloud += *t8;
-                }
-
-                //去除无效点
-                std::cout<<"cloud size before filter:"<< fused_cloud.points.size()<<std::endl;
                 pcl::PointCloud<RSHelios_ros::RsPointXYZIRT> filtered_cloud;
                 for (const auto &point : fused_cloud.points)
                 {
@@ -194,14 +126,17 @@ private:
                     pt.z = point.z;
 
                     // 检查点是否有效（非NaN和非无限远）
-                    if (pcl::isFinite(pt)) {
+                    if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z)) {
                         filtered_cloud.points.push_back(point);
                     }
                 }
-                std::cout<<"cloud size after filter:"<< filtered_cloud.points.size()<<std::endl;
 
+                fused_cloud.is_dense = true;
 
-
+                // // 移除NaN点
+                // std::vector<int> indices;
+                // pcl::removeNaNFromPointCloud(filtered_cloud, filtered_cloud, indices);
+   
                 // 发布结果
                 PointCloud2 output;
                 pcl::toROSMsg(filtered_cloud, output);
@@ -213,48 +148,20 @@ private:
             {
                 // 转换点云到基坐标系
                 auto t1 = transformCloud(cloud1, "base_link");
-                auto t2 = transformCloud(cloud2, "base_link");
                 auto t3 = transformCloud(cloud3, "base_link");
-                auto t4 = transformCloud(cloud4, "base_link");
 
-                auto t5 = transformCloud(cloud5, "base_link");
-                auto t6 = transformCloud(cloud6, "base_link");
-                auto t7 = transformCloud(cloud7, "base_link");
-                auto t8 = transformCloud(cloud8, "base_link");
                 pcl::PointCloud<pcl::PointXYZI> fused_cloud;
                 if (lidar_back_left_helios32)
                 {
                     fused_cloud += *t1;
                 }
-                if (lidar_back_up_helios32)
-                {
-                    fused_cloud += *t2;
-                }
+
                 if (lidar_front_right_helios32)
                 {
                     fused_cloud += *t3;
                 }
-                if (lidar_front_up_helios32)
-                {
-                    fused_cloud += *t4;
-                }
+                fused_cloud.is_dense = true;
 
-                if (rslidar_points_airy_front)
-                {
-                    fused_cloud += *t5;
-                }
-                if (rslidar_points_airy_rear)
-                {
-                    fused_cloud += *t6;
-                }
-                if (rslidar_points_m1p_front)
-                {
-                    fused_cloud += *t7;
-                }
-                if (rslidar_points_m1p_rear)
-                {
-                    fused_cloud += *t8;
-                }
                 // 发布结果
                 PointCloud2 output;
                 pcl::toROSMsg(fused_cloud, output);
@@ -277,9 +184,8 @@ private:
         // 发布修改后的消息
         pubs_[radar_idx - 1].publish(modified_cloud);
     }
-    pcl::PointCloud<pcl::PointXYZI>::Ptr transformCloud(
-        const PointCloud2ConstPtr &cloud,
-        const std::string &target_frame)
+
+    pcl::PointCloud<pcl::PointXYZI>::Ptr transformCloud(const PointCloud2ConstPtr &cloud, const std::string &target_frame)
     {
 
         PointCloud2 transformed_cloud;
@@ -289,9 +195,7 @@ private:
         pcl::fromROSMsg(transformed_cloud, *pcl_cloud);
         return pcl_cloud;
     }
-    pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>::Ptr transformCloud_rslidar(
-        const PointCloud2ConstPtr &cloud,
-        const std::string &target_frame)
+    pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>::Ptr transformCloud_rslidar(const PointCloud2ConstPtr &cloud,const std::string &target_frame)
     {
         pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>::Ptr pcl_cloud1(new pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>);
         pcl::fromROSMsg(*cloud,*pcl_cloud1);
@@ -308,14 +212,17 @@ private:
             if(pcl::isFinite(point))
             {
                 pcl_cloud2->push_back(point);
+                pcl_cloud2->back().ring = point.ring;
+                pcl_cloud2->back().timestamp = point.timestamp;
+                pcl_cloud2->back().intensity = point.intensity;
+                // std::cout<<"ring="<<point.ring;
+                // pcl_cloud2.ring = point.ring;
             }
         }
-        std::cout<<"input size:"<<pcl_cloud1->points.size()<<",valid size:"<<pcl_cloud2->points.size()<<std::endl;
+        // std::cout<<"input size:"<<pcl_cloud1->points.size()<<",valid size:"<<pcl_cloud2->points.size()<<std::endl;
 
         pcl::toROSMsg(*pcl_cloud2,cloud_tmp);
         cloud_tmp.header = cloud->header;
-
-
         PointCloud2 transformed_cloud;
         tf_buffer_.transform(cloud_tmp, transformed_cloud, target_frame, ros::Duration(0.1));
 
@@ -327,14 +234,10 @@ private:
     tf2_ros::TransformListener tf_listener_;
 
     message_filters::Subscriber<PointCloud2> sub_back_left_;
-    message_filters::Subscriber<PointCloud2> sub_back_up_;
     message_filters::Subscriber<PointCloud2> sub_front_right_;
-    message_filters::Subscriber<PointCloud2> sub_front_up_;
 
-    message_filters::Subscriber<PointCloud2> sub_airy_front_;
-    message_filters::Subscriber<PointCloud2> sub_airy_rear_;
-    message_filters::Subscriber<PointCloud2> sub_m1p_front_;
-    message_filters::Subscriber<PointCloud2> sub_m1p_rear_;
+
+
     boost::shared_ptr<Synchronizer<SyncPolicy>> sync_;
     ros::Publisher pub_;
     std::vector<ros::Subscriber> subs_;
@@ -343,11 +246,5 @@ private:
     bool transform_frame_id;
     bool CompressedImage;
     bool lidar_back_left_helios32;
-    bool lidar_back_up_helios32;
     bool lidar_front_right_helios32;
-    bool lidar_front_up_helios32;
-    bool rslidar_points_airy_front;
-    bool rslidar_points_airy_rear;
-    bool rslidar_points_m1p_front;
-    bool rslidar_points_m1p_rear;
 };

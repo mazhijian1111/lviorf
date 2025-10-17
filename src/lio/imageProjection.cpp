@@ -11,7 +11,7 @@ struct VelodynePointXYZIRT
 } EIGEN_ALIGN16;
 POINT_CLOUD_REGISTER_POINT_STRUCT (VelodynePointXYZIRT,
     (float, x, x) (float, y, y) (float, z, z) (float, intensity, intensity)
-    (uint16_t, ring, ring) (float, time, time)
+    (std::uint16_t, ring, ring) (float, time, time)
 )
 
 struct OusterPointXYZIRT {
@@ -26,8 +26,8 @@ struct OusterPointXYZIRT {
 } EIGEN_ALIGN16;
 POINT_CLOUD_REGISTER_POINT_STRUCT(OusterPointXYZIRT,
     (float, x, x) (float, y, y) (float, z, z) (float, intensity, intensity)
-    (uint32_t, t, t) (uint16_t, reflectivity, reflectivity)
-    (uint8_t, ring, ring) (uint16_t, noise, noise) (uint32_t, range, range)
+    (std::uint32_t, t, t) (uint16_t, reflectivity, reflectivity)
+    (std::uint8_t, ring, ring) (std::uint16_t, noise, noise) (std::uint32_t, range, range)
 )
 
 struct RobosensePointXYZIRT
@@ -40,7 +40,7 @@ struct RobosensePointXYZIRT
 } EIGEN_ALIGN16;
 POINT_CLOUD_REGISTER_POINT_STRUCT(RobosensePointXYZIRT, 
       (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)
-      (uint16_t, ring, ring)(double, timestamp, timestamp)
+      (std::uint16_t, ring, ring)(double, timestamp, timestamp)
 )
 
 // mulran datasets
@@ -53,13 +53,21 @@ struct MulranPointXYZIRT {
  }EIGEN_ALIGN16;
  POINT_CLOUD_REGISTER_POINT_STRUCT (MulranPointXYZIRT,
      (float, x, x) (float, y, y) (float, z, z) (float, intensity, intensity)
-     (uint32_t, t, t) (int, ring, ring)
+     (std::uint32_t, t, t) (int, ring, ring)
  )
+
+
+
+
+
 
 // Use the Velodyne point format as a common representation
 using PointXYZIRT = VelodynePointXYZIRT;
 
 const int queueLength = 2000;
+
+
+
 
 class ImageProjection : public ParamServer
 {
@@ -114,15 +122,23 @@ private:
     std_msgs::Header cloudHeader;
 
 public:
-    ImageProjection():
-    deskewFlag(0)
+    //构造函数
+    ImageProjection():deskewFlag(0)
     {
+        //订阅IMU原始数据
         subImu        = nh.subscribe<sensor_msgs::Imu>(imuTopic, 2000, &ImageProjection::imuHandler, this, ros::TransportHints().tcpNoDelay());
+        //订阅激光里程计增量
         subOdom       = nh.subscribe<nav_msgs::Odometry>(odomTopic+"_incremental", 2000, &ImageProjection::odometryHandler, this, ros::TransportHints().tcpNoDelay());
+        //订阅视觉里程计
         subVIOOdom       = nh.subscribe<nav_msgs::Odometry> ("lviorf/vins/odometry/imu_propagate_ros", 2000, &ImageProjection::odometryVIOHandler, this, ros::TransportHints().tcpNoDelay());
+        
+        //订阅输入的激光雷达话题
         subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>(pointCloudTopic, 5, &ImageProjection::cloudHandler, this, ros::TransportHints().tcpNoDelay());
 
+        //发布去畸变后的点云
         pubExtractedCloud = nh.advertise<sensor_msgs::PointCloud2> ("lviorf/lidar/deskew/cloud_deskewed", 1); //去除畸变后的点云
+        
+        //发布自定义格式的点云（带IMU预积分、里程计信息）
         pubLaserCloudInfo = nh.advertise<lviorf::cloud_info> ("lviorf/deskew/cloud_info", 1); //自定义格式的点云，含有更多的信息
 
         allocateMemory();
@@ -168,10 +184,10 @@ public:
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imuMsg)
     {
         // ROS_INFO("imuHandler");
-        // sensor_msgs::Imu thisImu = imuConverter(*imuMsg);
+        sensor_msgs::Imu thisImu = imuConverter(*imuMsg);
 
         //使用厦门数据时
-        sensor_msgs::Imu thisImu = imuConverterInXiamen(*imuMsg);
+        // sensor_msgs::Imu thisImu = imuConverterInXiamen(*imuMsg);
 
         std::lock_guard<std::mutex> lock1(imuLock);
         imuQueue.push_back(thisImu);
@@ -195,7 +211,7 @@ public:
     }
 
 
-    //里程计回调函数,存入到odomQueue队列中
+    //激光里程计回调函数,存入到odomQueue队列中
     void odometryHandler(const nav_msgs::Odometry::ConstPtr& odometryMsg)
     {
         std::lock_guard<std::mutex> lock2(odoLock);
@@ -212,15 +228,16 @@ public:
     //激光点云回调函数，对激光点云进行去畸变处理
     void cloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     {
-        ROS_INFO("cloudHandler");
+        ROS_INFO("Input lidar cloudHandler");
         //检查激光点云是否符合要求
         if (!cachePointCloud(laserCloudMsg))
             return;
 
-        //去畸变
+        //把IMU、激光里程计、视觉里程计的信息赋值到自定义的激光帧上
         if (!deskewInfo())
             return;
 
+        //真正的点云去畸变处理
         projectPointCloud();
 
         publishClouds();
@@ -233,7 +250,9 @@ public:
     {
         
         // cache point cloud，前面两帧点云都不处理
+        
         cloudQueue.push_back(*laserCloudMsg);
+        std::cout<<"订阅到的输入点云帧队列大小："<<cloudQueue.size()<<std::endl;
         if (cloudQueue.size() <= 2) //点云队列中的点云帧数量小于2，直接返回
             return false;
 
@@ -247,8 +266,7 @@ public:
         if (sensor == SensorType::VELODYNE || sensor == SensorType::LIVOX)
         {
             pcl::moveFromROSMsg(currentCloudMsg, *laserCloudIn);
-        }
-        else if (sensor == SensorType::OUSTER)
+        }else if (sensor == SensorType::OUSTER)
         {
             // Convert to Velodyne format
             pcl::moveFromROSMsg(currentCloudMsg, *tmpOusterCloudIn);
@@ -308,12 +326,30 @@ public:
             // Convert to Velodyne format
             std::cout<<"RSHelios 雷达"<<std::endl;
             pcl::fromROSMsg(currentCloudMsg, pl_orig_RSHelios);
-            laserCloudIn->points.resize(pl_orig_RSHelios.size());
-            laserCloudIn->is_dense = pl_orig_RSHelios.is_dense;
+
+            pcl::PointCloud<RSHelios_ros::RsPointXYZIRT> filtered_cloud;
+            for (const auto &point : pl_orig_RSHelios.points)
+            {
+                double distance = sqrt(point.x*point.x+point.y*point.y+point.z*point.z);
+                if(distance > 100 || distance < 5.0)
+                {
+                    continue;
+                }
+
+                // 检查点是否有效（非NaN和非无限远）
+                if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z)) {
+                    filtered_cloud.push_back(point);
+                }
+            }
+            filtered_cloud.is_dense = true;
+            // std::cout<<"nan前:"<<pl_orig_RSHelios.size()<<",nan后:"<<filtered_cloud.size()<<std::endl;
+
+            laserCloudIn->points.resize(filtered_cloud.size());
+            laserCloudIn->is_dense = filtered_cloud.is_dense;
             // to new pointcloud
-            double start_stamptime = pl_orig_RSHelios.points[0].timestamp;
-            for (int i = 0; i < pl_orig_RSHelios.points.size(); i++) {
-                auto &src = pl_orig_RSHelios.points[i];
+            double start_stamptime = filtered_cloud.points[0].timestamp;
+            for (int i = 0; i < filtered_cloud.points.size(); i++) {
+                auto &src = filtered_cloud.points[i];
                 auto &dst = laserCloudIn->points[i];
                 dst.x = src.x;
                 dst.y = src.y;
@@ -349,7 +385,7 @@ public:
             ros::shutdown();
         }
 
-        //点云校验
+        //点云校验，非RSHelios32 雷达
         if(sensor != SensorType::RSHelios)
         {
             cloudHeader = currentCloudMsg.header;
@@ -475,12 +511,14 @@ public:
         std::lock_guard<std::mutex> lock2(odoLock);
         std::lock_guard<std::mutex> lock3(odoVIOLock);
 
-        // make sure IMU data available for the scan
+        // make sure IMU data available for the scan，只有满足第一帧IMU在激光前面，最后一帧IMU在激光帧后面才行
         if (imuQueue.empty() || imuQueue.front().header.stamp.toSec() > timeScanCur || imuQueue.back().header.stamp.toSec() < timeScanEnd)
         {
             ROS_DEBUG("Waiting for IMU data ...");
             return false;
         }
+
+
 
         imuDeskewInfo();//IMU
 
@@ -513,6 +551,7 @@ public:
 
         imuPointerCur = 0;
 
+        //这里直接是赋值的IMU，没有进行预计分？
         for (int i = 0; i < (int)imuQueue.size(); ++i)
         {
             sensor_msgs::Imu thisImuMsg = imuQueue[i];
@@ -520,7 +559,7 @@ public:
 
             if (imuType) {
                 // get roll, pitch, and yaw estimation for this scan
-                //取出激光帧前面IMU的RPY，赋值到要发布的点云数据结构上
+                //取出激光帧前面最近IMU的RPY，赋值到要发布的点云数据结构上
                 if (currentImuTime <= timeScanCur)
                     imuRPY2rosRPY(&thisImuMsg, &cloudInfo.imuRollInit, &cloudInfo.imuPitchInit, &cloudInfo.imuYawInit);
             }
@@ -577,7 +616,7 @@ public:
         cloudInfo.imuAvailable = true;
     }
 
-    //里程计信息处理
+    //激光里程计信息处理
     void odomDeskewInfo()
     {
         cloudInfo.odomAvailable = false;
@@ -795,7 +834,7 @@ public:
         
         if(deskewFlag == 1)
         {
-            std::cout<<"时间差："<<(timeScanEnd - timeScanCur)<<std::endl;
+            // std::cout<<"时间差："<<(timeScanEnd - timeScanCur)<<std::endl;
             float ratio = relTime / (timeScanEnd - timeScanCur);
 
             *posXCur = ratio * odomIncreX;
@@ -839,18 +878,14 @@ public:
         newPoint.z = transBt(2,0) * point->x + transBt(2,1) * point->y + transBt(2,2) * point->z + transBt(2,3);
         newPoint.intensity = point->intensity;
 
+        
+
         return newPoint;
     }
 
     //对点云进行投影，即去畸变处理
     void projectPointCloud()
     {
-        // if(deskewFlag == -1) //点云帧中的点无时间信息
-        {
-
-        }
-
-
         int cloudSize = laserCloudIn->points.size();
         // range image projection
         for (int i = 0; i < cloudSize; ++i)
@@ -869,11 +904,11 @@ public:
             if (rowIdn < 0 || rowIdn >= N_SCAN)
                 continue;
 
-            if (rowIdn % downsampleRate != 0)
-                continue;
+            // if (rowIdn % downsampleRate != 0)
+            //     continue;
 
-            if (i % point_filter_num != 0)
-                continue;
+            // if (i % point_filter_num != 0)
+            //     continue;
 
             //对单个点云进行了坐标变换，默认了同一帧的两个点之间的位置平移为0，只进行了旋转（取的是IMU旋转）
             thisPoint = deskewPoint(&thisPoint, laserCloudIn->points[i].time);

@@ -85,7 +85,7 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(RSHelios_ros::RsPointXYZIRT,
     (float, y, y)
     (float, z, z)
     (float, intensity, intensity)
-    (uint16_t, ring, ring)
+    (std::uint16_t, ring, ring)
     (double, timestamp, timestamp)   
 )
 
@@ -404,6 +404,8 @@ void imuRPY2rosRPY(sensor_msgs::Imu *thisImuMsg, T *rosRoll, T *rosPitch, T *ros
     tf::Quaternion orientation;
     tf::quaternionMsgToTF(thisImuMsg->orientation, orientation);
     tf::Matrix3x3(orientation).getRPY(imuRoll, imuPitch, imuYaw);
+    std::cout<<"imu-orientation:"<<thisImuMsg->orientation.x<<","<<thisImuMsg->orientation.y<<","<<thisImuMsg->orientation.z
+    <<","<<thisImuMsg->orientation.w<<std::endl;
 
     *rosRoll = imuRoll;
     *rosPitch = imuPitch;
