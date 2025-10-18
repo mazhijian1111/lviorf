@@ -14,15 +14,22 @@ lidar_skip: 1                    # skip this amount of scans
 align_camera_lidar_estimation: 1 # align camera and lidar estimation for visualization
 
 # camera to ros standard frame(front-left-up) extrinsic, Theoretically, it is a fixed value
-# for kitti datasets(front-left-up)
+# for xiamen datasets(front-left-up)
 cameraToROSStandard: !!opencv-matrix
    rows: 3
    cols: 3
    dt: d
-   data: [0, -1, 0, 
-          0, 0, -1, 
-          1, 0, 0]
+   data: [0, -1, 0,
+         0, 0, -1,
+         1, 0, 0]
 
+# cameraToROSStandard: !!opencv-matrix
+#    rows: 3
+#    cols: 3
+#    dt: d
+#    data: [0, 0, 1,
+#          -1, 0, 0,
+#          0, -1, 0]
 # camera model
 model_type: PINHOLE
 camera_name: camera
@@ -59,19 +66,19 @@ extrinsicRotation: !!opencv-matrix
    rows: 3
    cols: 3
    dt: d
-   data: [  0.031809, 0.963606, 0.265425,
-            0.080632, -0.267169, 0.960271,
-            0.996237, -0.009144, -0.086196]
+   data: [0.960316, -0.278479, 0.0155607, 
+          0.278413, -0.960441, -0.00635433, 
+          0.0167147, -0.00176987, 0.999859]
 
 #Translation from camera frame to imu frame, imu^T_cam
 extrinsicTranslation: !!opencv-matrix
    rows: 3
    cols: 1
    dt: d
-   data: [-14.980078, 2.762171, -0.839645]
+   data: [-13.4155, 1.06769, -1.15495]
 
 #feature traker paprameters
-max_cnt: 200            # max feature number in feature tracking
+max_cnt: 250            # max feature number in feature tracking
 min_dist: 20            # min distance between two features 
 freq: 20                # frequence (Hz) of publish tracking result. At least 10Hz for good estimation. If set 0, the frequence will be same as raw image 
 F_threshold: 1.0        # ransac threshold (pixel)

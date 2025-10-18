@@ -89,7 +89,7 @@ public:
         pub_depth_image =   n.advertise<sensor_msgs::Image>      (PROJECT_NAME + "/vins/depth/depth_image",   5);
         pub_depth_cloud =   n.advertise<sensor_msgs::PointCloud2>(PROJECT_NAME + "/vins/depth/depth_cloud",   5);
 
-        pointsArray.resize(num_bins);
+        pointsArray.resize(num_bins); //360*360
         for (int i = 0; i < num_bins; ++i)
             pointsArray[i].resize(num_bins);
     }
@@ -125,6 +125,8 @@ public:
         tf::Matrix3x3 m(transform.getRotation());
         m.getRPY(rollCur, pitchCur, yawCur);
         Eigen::Affine3f transNow = pcl::getTransformation(xCur, yCur, zCur, rollCur, pitchCur, yawCur);
+        std::cout<<"获取深度点云时查询到的视觉位姿(x,y,z,roll,pitch,yaw):"<<xCur<<","<<yCur<<","<<zCur<<","<<rollCur
+        <<","<< pitchCur<<","<< yawCur<<std::endl;
 
         // 0.4 transform cloud from global frame to camera frame
         // depth cloud in local ros standard frame
@@ -155,6 +157,7 @@ public:
             features_3d_sphere->push_back(p);
         }
 
+        //将深度点云投影在距离图像上
         // 3. project depth cloud on a range image, filter points satcked in the same region
         float bin_res = 180.0 / (float)num_bins; // currently only cover the space in front of lidar (-90 ~ 90)
         cv::Mat rangeImage = cv::Mat(num_bins, num_bins, CV_32F, cv::Scalar::all(FLT_MAX));
@@ -163,7 +166,7 @@ public:
         {
             PointType p = depth_cloud_local->points[i];
             // filter points not in camera view
-            if (p.x < 0 || abs(p.y / p.x) > 10 || abs(p.z / p.x) > 10)
+            if (p.x < 0 || abs(p.y / p.x) > 50 || abs(p.z / p.x) > 50)
                 continue;
             // find row id in range image
             float row_angle = atan2(p.z, sqrt(p.x * p.x + p.y * p.y)) * 180.0 / M_PI + 90.0; // degrees, bottom -> up, 0 -> 360
@@ -194,7 +197,7 @@ public:
             }
         }
         *depth_cloud_local = *depth_cloud_local_filter2;
-        publishCloud(&pub_depth_cloud, depth_cloud_local, stamp_cur, "vins_body_ros");
+        publishCloud(&pub_depth_cloud, depth_cloud_local, stamp_cur, "vins_body_ros"); //发布深度点云话题
 
         // 5. project depth cloud onto a unit sphere
         pcl::PointCloud<PointType>::Ptr depth_cloud_unit_sphere(new pcl::PointCloud<PointType>());
@@ -268,7 +271,7 @@ public:
         }
 
         // visualize features in cartesian 3d space (including the feature without depth (default 1))
-        publishCloud(&pub_depth_feature, features_3d_sphere, stamp_cur, "vins_body_ros");
+        publishCloud(&pub_depth_feature, features_3d_sphere, stamp_cur, "vins_body_ros"); //发布深度特征点
         
         // update depth value for return
         for (int i = 0; i < (int)features_3d_sphere->size(); ++i)
@@ -278,6 +281,7 @@ public:
         }
 
         // visualization project points on image for visualization (it's slow!)
+        //发布深度图像，用于可视化
         if (pub_depth_image.getNumSubscribers() != 0)
         {
             vector<cv::Point2f> points_2d;
@@ -311,7 +315,7 @@ public:
             {
                 float r, g, b;
                 getColor(points_distance[i], 50.0, r, g, b);
-                cv::circle(circleImage, points_2d[i], 0, cv::Scalar(r, g, b), 5);
+                cv::circle(circleImage, points_2d[i], 2, cv::Scalar(r, g, b), 5);
             }
             cv::addWeighted(showImage, 1.0, circleImage, 0.7, 0, showImage); // blend camera image and circle image
 

@@ -25,6 +25,7 @@ DepthRegister *depthRegister;
 ros::Publisher pub_feature;
 ros::Publisher pub_match;
 ros::Publisher pub_restart;
+ros::Publisher pub_test;
 
 // feature tracker variables
 FeatureTracker trackerData[NUM_OF_CAM]; //特征点跟踪数组
@@ -194,7 +195,7 @@ void imgCompressed_callback(const sensor_msgs::CompressedImageConstPtr &img_msg)
         else
             pub_feature.publish(feature_points);
 
-        // std::cout<<"视觉跟踪到的特征点数量："<<feature_points->points.size()<<std::endl;
+        std::cout<<"视觉跟踪到的特征点数量："<<feature_points->points.size()<<std::endl;
 
         // publish features in image
         if (pub_match.getNumSubscribers() != 0)
@@ -409,15 +410,15 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
                     {
                         // track count
                         double len = std::min(1.0, 1.0 * trackerData[i].track_cnt[j] / WINDOW_SIZE);
-                        cv::circle(tmp_img, trackerData[i].cur_pts[j], 4, cv::Scalar(255 * (1 - len), 255 * len, 0), 4);
+                        cv::circle(tmp_img, trackerData[i].cur_pts[j], 6, cv::Scalar(255 * (1 - len), 255 * len, 0), -1);
                     } else {
                         // depth 
                         if(j < depth_of_points.values.size())
                         {
                             if (depth_of_points.values[j] > 0)
-                                cv::circle(tmp_img, trackerData[i].cur_pts[j], 4, cv::Scalar(0, 255, 0), 4);
+                                cv::circle(tmp_img, trackerData[i].cur_pts[j], 6, cv::Scalar(0, 255, 0), -1);
                             else
-                                cv::circle(tmp_img, trackerData[i].cur_pts[j], 4, cv::Scalar(0, 0, 255), 4);
+                                cv::circle(tmp_img, trackerData[i].cur_pts[j], 6, cv::Scalar(0, 0, 255), -1);
                         }
                     }
                 }
@@ -432,7 +433,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 //当前帧5s内的激光点云组成深度点云
 void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
 {
-    // std::cout<<"订阅去除畸变的激光点云"<<std::endl;
+    std::cout<<"订阅去除畸变的激光点云(雷达坐标系下),并进行TF变换"<<std::endl;
     static int lidar_count = -1;
     if (++lidar_count % (LIDAR_SKIP+1) != 0)
         return;
@@ -463,7 +464,7 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
 
     // 0. listen to transform
     static tf::TransformListener listener;
-    static tf::StampedTransform transform;
+    static tf::StampedTransform transform; //这是个
     try{
         listener.waitForTransform("vins_world", "vins_body_ros", laser_msg->header.stamp, ros::Duration(0.01));
         listener.lookupTransform("vins_world", "vins_body_ros", laser_msg->header.stamp, transform);
@@ -473,6 +474,7 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
         return;
     }
 
+    //把雷达系的点变换到相机系
     //camera_to_ros_transform是将相机系转为标准ROS系，lidar_to_camera_transform是雷达到相机的外参
     tf::Transform trans_lidar_in_world = transform * camera_to_ros_transform.inverse() * lidar_to_camera_transform.inverse();
     tf::Transform transform_ = trans_lidar_in_world;
@@ -487,15 +489,15 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
 
     // 1. convert laser cloud message to pcl
     pcl::PointCloud<PointType>::Ptr laser_cloud_in(new pcl::PointCloud<PointType>());
-    pcl::fromROSMsg(*laser_msg, *laser_cloud_in);
+    pcl::fromROSMsg(*laser_msg, *laser_cloud_in); //订阅到的去畸变后的激光点云帧
 
     // 2. downsample new cloud (save memory)
     pcl::PointCloud<PointType>::Ptr laser_cloud_in_ds(new pcl::PointCloud<PointType>());
     static pcl::VoxelGrid<PointType> downSizeFilter;
-    downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
-    downSizeFilter.setInputCloud(laser_cloud_in);
-    downSizeFilter.filter(*laser_cloud_in_ds);
-    *laser_cloud_in = *laser_cloud_in_ds;
+    // downSizeFilter.setLeafSize(0.1, 0.1, 0.1);
+    // downSizeFilter.setInputCloud(laser_cloud_in); //
+    // downSizeFilter.filter(*laser_cloud_in_ds);
+    // *laser_cloud_in = *laser_cloud_in_ds;
 
     /************************************20250911 add**************************************************/
     // pcl::PointCloud<PointType>::Ptr laser_cloud_1(new pcl::PointCloud<PointType>());
@@ -504,7 +506,7 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
     /*************************************************************************************************/
 
 
-    // trans lidar point to ros standard frame
+    // trans lidar point to ros standard frame，转到ROS标准坐标系下
     tf::Transform ros_to_lidar = camera_to_ros_transform.inverse() * lidar_to_camera_transform.inverse();
     double roll, pitch, yaw;
     tf::Matrix3x3(ros_to_lidar.getRotation()).getRPY(roll, pitch, yaw);
@@ -520,10 +522,20 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
         PointType p_trans = laser_cloud_offset->points[i];
 
         //10是一个经验性的宽松阈值，旨在过滤明显无效点（如数值溢出点），而非精确裁剪视场角
-        if (p_trans.x >= 0 && abs(p_trans.y / p_trans.x) <= 10 && abs(p_trans.z / p_trans.x) <= 10)
+        if (p_trans.x >= 0 && abs(p_trans.y / p_trans.x) <= 50 && abs(p_trans.z / p_trans.x) <= 50)
             laser_cloud_in_filter->push_back(p);
     }
     *laser_cloud_in = *laser_cloud_in_filter;
+
+    //测试一下效果，看看乱不乱
+    std::cout<<"测试视觉部分订阅的激光点云"<<std::endl;
+    sensor_msgs::PointCloud2 tempCloud;
+    pcl::toROSMsg(*laser_cloud_in, tempCloud);
+    tempCloud.header.stamp = laser_msg->header.stamp;
+    tempCloud.header.frame_id =  laser_msg->header.frame_id;
+    pub_test.publish(tempCloud); 
+
+
 
     // TODO: transform to IMU body frame
     // add by YJZ
@@ -538,7 +550,7 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
 
     // 6. save new cloud
     double timeScanCur = laser_msg->header.stamp.toSec();
-    cloudQueue.push_back(*laser_cloud_global);
+    cloudQueue.push_back(*laser_cloud_global); //存入点云队列中
     timeQueue.push_back(timeScanCur);
     // lio_transform.push_back(lio_transform);
 
@@ -564,7 +576,7 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
 
     // 9. downsample global cloud
     pcl::PointCloud<PointType>::Ptr depthCloudDS(new pcl::PointCloud<PointType>());
-    downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
+    downSizeFilter.setLeafSize(0.1, 0.1, 0.1);
     downSizeFilter.setInputCloud(depthCloud);
     downSizeFilter.filter(*depthCloudDS);
     *depthCloud = *depthCloudDS; //深度点云
@@ -804,9 +816,10 @@ int main(int argc, char **argv)
         sub_lidar.shutdown();
 
     // messages to vins estimator
-    pub_feature = n.advertise<sensor_msgs::PointCloud>(PROJECT_NAME + "/vins/feature/feature",     5);
-    pub_match   = n.advertise<sensor_msgs::Image>     (PROJECT_NAME + "/vins/feature/feature_img", 5);
+    pub_feature = n.advertise<sensor_msgs::PointCloud>(PROJECT_NAME + "/vins/feature/feature",     5); //视觉特征点话题
+    pub_match   = n.advertise<sensor_msgs::Image>     (PROJECT_NAME + "/vins/feature/feature_img", 5); //用于可视化
     pub_restart = n.advertise<std_msgs::Bool>         (PROJECT_NAME + "/vins/feature/restart",     5);
+    pub_test   = n.advertise<sensor_msgs::PointCloud>(PROJECT_NAME + "/vins/test",     5); //用于测试
 
     // two ROS spinners for parallel processing (image and lidar)
     ros::MultiThreadedSpinner spinner(2);

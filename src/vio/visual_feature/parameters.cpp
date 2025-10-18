@@ -109,6 +109,15 @@ void readParameters(ros::NodeHandle &n)
         camera_to_ros_matrix = eigen_camera_2_ros_R;
 
         lidar_to_camera_transform = lidar_to_imu_transform * imu_to_camera_transform;
+
+        std::cout<<"lidar_to_imu_transform:"<<lidar_to_imu_transform.getOrigin()<<std::endl;
+        std::cout<<lidar_to_imu_transform.getOrigin().x()<<","<<lidar_to_imu_transform.getOrigin().y()<<","<<lidar_to_imu_transform.getOrigin().z()<<std::endl;
+
+        std::cout<<"imu_to_camera_transform:"<<imu_to_camera_transform.getOrigin()<<std::endl;
+        std::cout<<imu_to_camera_transform.getOrigin().x()<<","<<imu_to_camera_transform.getOrigin().y()<<","<<imu_to_camera_transform.getOrigin().z()<<std::endl;
+        
+        std::cout<<"lidar_to_camera_transform:"<<lidar_to_camera_transform.getOrigin()<<std::endl;
+        std::cout<<lidar_to_camera_transform.getOrigin().x()<<","<<lidar_to_camera_transform.getOrigin().y()<<","<<lidar_to_camera_transform.getOrigin().z()<<std::endl;
     }
 
 

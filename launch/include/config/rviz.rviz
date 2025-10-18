@@ -11,6 +11,7 @@ Panels:
         - /Mapping1/LIO1/Map (global)1
         - /Mapping1/VIO1
         - /Mapping1/VIO1/point_cloud1
+        - /PointCloud21
       Splitter Ratio: 0.5600000023841858
     Tree Height: 182
   - Class: rviz/Selection
@@ -410,8 +411,7 @@ Visualization Manager:
               Marker Topic: /lviorf/mapping/loop_closure_constraints
               Name: Loop constraint
               Namespaces:
-                loop_edges: true
-                loop_nodes: true
+                {}
               Queue Size: 100
               Value: true
           Enabled: true
@@ -560,6 +560,34 @@ Visualization Manager:
           Name: VIO
       Enabled: true
       Name: Mapping
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Min Color: 0; 0; 0
+      Name: PointCloud2
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.009999999776482582
+      Style: Points
+      Topic: /lviorf/vins/depth/depth_cloud
+      Unreliable: false
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
@@ -576,7 +604,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 515.1207275390625
+      Distance: 198.08840942382812
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -584,17 +612,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 11.834354400634766
-        Y: -216.19419860839844
-        Z: -10.906978607177734
+        X: -6.259548664093018
+        Y: -1.8752713203430176
+        Z: -10.693201065063477
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5697963237762451
+      Pitch: 0.6347964406013489
       Target Frame: base_link
-      Yaw: 4.906765937805176
+      Yaw: 0.431754469871521
     Saved: ~
 Window Geometry:
   Displays:
