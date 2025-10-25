@@ -334,6 +334,12 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         sensor_msgs::ChannelFloat32 velocity_x_of_point;
         sensor_msgs::ChannelFloat32 velocity_y_of_point;
 
+        id_of_point.name = "feature_id";
+        u_of_point.name = "u_of_point";
+        v_of_point.name = "v_of_point";
+        velocity_x_of_point.name = "velocity_x_of_point";
+        velocity_y_of_point.name = "velocity_y_of_point";
+
         feature_points->header.stamp = img_msg->header.stamp;
         feature_points->header.frame_id = "vins_body";
 
@@ -464,8 +470,10 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
 
     // 0. listen to transform
     static tf::TransformListener listener;
-    static tf::StampedTransform transform; //这是个
+    static tf::StampedTransform transform; //这是个视觉定位得到的TF
     try{
+        // waitForTransform( [父类坐标系], [子类坐标系], [在这一时刻], [时间段] )
+        // 时间段为 waitForTransform() 函数 的结束条件：最多等待 4 秒，如果提前得到了坐标的转换信息，直接结束等待。
         listener.waitForTransform("vins_world", "vins_body_ros", laser_msg->header.stamp, ros::Duration(0.01));
         listener.lookupTransform("vins_world", "vins_body_ros", laser_msg->header.stamp, transform);
     } 

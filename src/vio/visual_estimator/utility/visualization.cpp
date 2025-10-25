@@ -99,6 +99,12 @@ void pubLatestOdometry(const Eigen::Vector3d &P, const Eigen::Quaterniond &Q, co
 
     tf::Transform odom_camera_ros = q_odom_lidar * lidar_to_camera_transform * camera_to_ros_transform;
 
+
+
+
+
+    
+
     // TF of camera in vins_world in ROS format (change rotation), used for depth registration
     tf::Transform t_w_body = tf::Transform(odom_camera_ros.getRotation(), tf::Vector3(odom_camera_ros.getOrigin().getX(), odom_camera_ros.getOrigin().getY(), odom_camera_ros.getOrigin().getZ()));
     tf::StampedTransform trans_world_vinsbody_ros = tf::StampedTransform(t_w_body, header.stamp, "vins_world", "vins_body_ros");

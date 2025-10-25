@@ -1,14 +1,15 @@
 <launch>
     <node pkg="lviorf" type="gnss_odom_calibrator" name="gnss_odom_calibrator" output="screen">
         <param name="odom_topic" value="/lviorf/mapping/odometry" />
-        <param name="gnss_topic" value="/gps/fix" />
+        <param name="gnss_topic" value="/bynav/fix" />
         <param name="output_topic" value="/gnss_calibrated" />
         <param name="odom_frame" value="odom" />
         <param name="base_frame" value="base_link" />
-        <param name="min_samples" value="60" />
+        <param name="min_samples" value="100" />
         <param name="max_time_diff" value="0.05" />
         <param name="auto_set_origin" value="true" />
         <!-- Optional: manual origin setting -->
+        <param name="use_original_flag" value="1" />  <!-- 1:使用第一帧，2：使用下面配置的原点 -->
         <param name="origin_lat" value="49.049500" />
         <param name="origin_lon" value="8.396601" />
         <param name="origin_alt" value="113.057571" />

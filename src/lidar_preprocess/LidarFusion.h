@@ -87,7 +87,7 @@ public:
                                             this, _1, _2));
 
         // 初始化发布者
-        pub_ = nh.advertise<PointCloud2>("/fused_pointcloud", 1);
+        pub_ = nh.advertise<PointCloud2>("/fused_points", 1);
     }
     bool Is_Compressed_Image()
     {
@@ -117,32 +117,58 @@ private:
                     fused_cloud += *t3;
                 }
 
-                pcl::PointCloud<RSHelios_ros::RsPointXYZIRT> filtered_cloud;
+                pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>::Ptr filtered_cloud(new pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>);
                 for (const auto &point : fused_cloud.points)
                 {
-                    pcl::PointXYZ pt;
+                    RSHelios_ros::RsPointXYZIRT pt;
                     pt.x = point.x;
                     pt.y = point.y;
                     pt.z = point.z;
+                    pt.intensity = point.intensity;
+                    pt.ring = point.ring;
+                    pt.timestamp = point.timestamp;
+                    // std::cout<<"ring:"<<pt.ring<<",pt.timestamp="<<pt.timestamp<<std::endl;
+
 
                     // 检查点是否有效（非NaN和非无限远）
                     if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z)) {
-                        filtered_cloud.points.push_back(point);
+                        filtered_cloud->points.push_back(pt);
                     }
                 }
 
-                fused_cloud.is_dense = true;
+                filtered_cloud->is_dense = true;
 
                 // // 移除NaN点
                 // std::vector<int> indices;
                 // pcl::removeNaNFromPointCloud(filtered_cloud, filtered_cloud, indices);
-   
+
+                std::sort(filtered_cloud->points.begin(), filtered_cloud->points.end(),
+                [](const RSHelios_ros::RsPointXYZIRT& a, const RSHelios_ros::RsPointXYZIRT& b) {
+                    return a.timestamp < b.timestamp;
+                });
+
+                double min_time = filtered_cloud->points.front().timestamp;
+
+
                 // 发布结果
-                PointCloud2 output;
-                pcl::toROSMsg(filtered_cloud, output);
-                output.header.stamp = ros::Time().fromSec(cloud1->header.stamp.toSec());
+                sensor_msgs::PointCloud2 output;
+                pcl::toROSMsg(*filtered_cloud, output);
+                output.header.stamp = ros::Time().fromSec(min_time);
                 output.header.frame_id = "base_link";
-                pub_.publish(output);
+                //转到前雷达下
+                sensor_msgs::PointCloud2 transformed_cloud;
+                tf_buffer_.transform(output, transformed_cloud, "lidar2", ros::Duration(0.1));
+                // transformed_cloud.header.stamp = ros::Time().fromSec(min_time);
+                // transformed_cloud.header.frame_id = "lidar2";
+                pub_.publish(transformed_cloud);
+
+                pcl::PointCloud<RSHelios_ros::RsPointXYZIRT> pl_orig_RSHelios;
+                pcl::fromROSMsg(transformed_cloud, pl_orig_RSHelios);
+                for (const auto &point : pl_orig_RSHelios.points)
+                {
+                    std::cout<<"ring:"<<point.ring<<",pt.timestamp="<<point.timestamp<<std::endl;
+                }
+
             }
             else
             {
@@ -161,6 +187,11 @@ private:
                     fused_cloud += *t3;
                 }
                 fused_cloud.is_dense = true;
+
+
+
+
+
 
                 // 发布结果
                 PointCloud2 output;
@@ -181,6 +212,17 @@ private:
         sensor_msgs::PointCloud2 modified_cloud = *msg;
         // 修改frame_id
         modified_cloud.header.frame_id = "lidar" + std::to_string(radar_idx);
+
+        // if(radar_idx == 1)
+        // {
+        //     modified_cloud.header.frame_id = "lidar";
+        // }
+        // else if(radar_idx == 2){
+        //     modified_cloud.header.frame_id = "rslidar_front_right";
+        // }else{
+        //     modified_cloud.header.frame_id = "lidar"+ std::to_string(radar_idx);
+        // }
+
         // 发布修改后的消息
         pubs_[radar_idx - 1].publish(modified_cloud);
     }

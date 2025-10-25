@@ -5,13 +5,13 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /PointCloud21
-        - /Image1
-        - /Image2
-        - /Image3
-        - /Image4
+        - /Fused PointCloud1
       Splitter Ratio: 0.5
-    Tree Height: 489
+    Tree Height: 747
+Preferences:
+  PromptSaveOnExit: true
+Toolbars:
+  toolButtonStyle: 2
 Visualization Manager:
   Class: ""
   Displays:
@@ -20,71 +20,63 @@ Visualization Manager:
       Class: rviz/Grid
       Color: 160; 160; 164
       Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
       Name: Grid
-      Plane Cell Count: 10
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
       Plane: 0
+      Plane Cell Count: 10
+      Reference Frame: <Fixed Frame>
       Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
-      Autocompute Value Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
       Axis: Z
       Channel Name: intensity
       Class: rviz/PointCloud2
       Color: 255; 255; 255
-      Color Transformer: RGB8
-      Decimation: 1
+      Color Transformer: Intensity
+      Decay Time: 0
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 4096
       Min Color: 0; 0; 0
-      Min Intensity: 0
       Name: Fused PointCloud
       Position Transformer: XYZ
       Queue Size: 120
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.01
+      Size (m): 0.009999999776482582
       Style: Points
-      Topic: /fused_pointcloud
+      Topic: /fused_points
+      Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
-    - Alpha: 0.8
-      Class: rviz/Image
+    - Class: rviz/Image
       Enabled: true
-      Name: Image1
       Image Topic: /m_gmsl_1/image_raw
-      Transport Hint: raw
-      Unreliable: false
-      Value: true
-    - Alpha: 0.8
-      Class: rviz/Image
-      Enabled: true
-      Name: Image2
-      Image Topic: /m_gmsl_2/image_raw
-      Transport Hint: raw
-      Unreliable: false
-      Value: true
-    - Alpha: 0.8
-      Class: rviz/Image
-      Enabled: true
-      Name: Image3
-      Image Topic: /m_gmsl_3/image_raw
-      Transport Hint: raw
-      Unreliable: false
-      Value: true
-    - Alpha: 0.8
-      Class: rviz/Image
-      Enabled: true
-      Name: Image4
-      Image Topic: /m_gmsl_4/image_raw
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image1
+      Normalize Range: true
+      Queue Size: 2
       Transport Hint: raw
       Unreliable: false
       Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
+    Default Light: true
     Fixed Frame: base_link
     Frame Rate: 30
   Name: root
@@ -96,22 +88,45 @@ Visualization Manager:
     - Class: rviz/FocusCamera
     - Class: rviz/Measure
     - Class: rviz/SetInitialPose
+      Theta std deviation: 0.2617993950843811
       Topic: /initialpose
+      X std deviation: 0.5
+      Y std deviation: 0.5
     - Class: rviz/SetGoal
       Topic: /move_base_simple/goal
   Value: true
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 5.0
+      Distance: 106.62440490722656
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Field of View: 0.7853981852531433
       Focal Point:
         X: 0
         Y: 0
         Z: 0
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
       Name: Current View
-      Near Clip Distance: 0.01
-      Pitch: 0.5
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 1.244999885559082
       Target Frame: base_link
-      Value: Orbit (rviz)
-      Yaw: 0.5
+      Yaw: 0.440000057220459
     Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1163
+  Hide Left Dock: false
+  Hide Right Dock: false
+  Image1:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd00000001000000000000015600000431fc0200000005fb0000000c0049006d0061006700650034000000003d0000009a0000000000000000fb0000000c0049006d006100670065003200000000b9000000790000000000000000fb0000000c0049006d006100670065003300000000c9000000840000000000000000fb0000000c0049006d0061006700650031010000003d000000b50000001600fffffffb000000100044006900730070006c00610079007301000000f800000376000000c900ffffff000006240000043100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Width: 1920
+  X: 0
+  Y: 0

@@ -2,8 +2,8 @@ lviorf:
 
   # Topics
   # pointCloudTopic: "points_raw"               # Point cloud data
-  # pointCloudTopic: "/fused_pointcloud"
-  pointCloudTopic: "/lidar_front_right_helios32"
+  # pointCloudTopic: "/fused_points"
+  pointCloudTopic: "/lidar_front_right_helios32111"
 
   imuTopic: "/bynav/imu/data"                         # IMU data
   odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
@@ -38,11 +38,11 @@ lviorf:
   # IMU Settings
   # imuType: 0                                  # 0: 6-axis  1: 9-axis
   imuType: 1                                    #20250908修改 0: 6-axis  1: 9-axis
-  imuRate: 60.0
-  imuAccNoise: 3.9939570888238808e-03
-  imuGyrNoise: 1.5636343949698187e-03
-  imuAccBiasN: 6.4356659353532566e-05
-  imuGyrBiasN: 3.5640318696367613e-05
+  imuRate: 125.0
+  imuAccNoise: 8.1330537434371481e-03
+  imuGyrNoise: 7.4266825125507141e-03
+  imuAccBiasN: 1.2123362494392119e-04
+  imuGyrBiasN: 8.6572985145653080e-05
   imuGravity: 9.80511
   imuRPYWeight: 0.01
 
@@ -55,12 +55,12 @@ lviorf:
                    0.0167147, -0.00176987, 0.999859]
 
   # This parameter is set only when the 9-axis IMU is used, but it must be a high-precision IMU. e.g. MTI-680
-  extrinsicRPY: [9.999976e-01, 7.553071e-04, -2.035826e-03, 
-                  -7.854027e-04, 9.998898e-01, -1.482298e-02, 
-                  2.024406e-03, 1.482454e-02, 9.998881e-01]
+  extrinsicRPY: [-0.960316, -0.278479, 0.0155607, 
+                   0.278413, -0.960441, -0.00635433, 
+                   0.0167147, -0.00176987, 0.999859]
 
   # voxel filter paprams
-  mappingSurfLeafSize: 0.1                      # default: 0.4 - outdoor, 0.2 - indoor
+  mappingSurfLeafSize: 0.2                      # default: 0.4 - outdoor, 0.2 - indoor
 
   # robot motion constraint (in case you are using a 2D robot)
   z_tollerance: 1000                            # meters
@@ -73,8 +73,8 @@ lviorf:
   # Surrounding map
   surroundingkeyframeAddingDistThreshold: 0.15   # meters, regulate keyframe adding threshold
   surroundingkeyframeAddingAngleThreshold: 0.1  # radians, regulate keyframe adding threshold
-  surroundingKeyframeDensity: 1.0               # meters, downsample surrounding keyframe poses   
-  surroundingKeyframeSearchRadius: 50.0         # meters, within n meters scan-to-map optimization (when loop closure disabled)
+  surroundingKeyframeDensity: 0.1               # meters, downsample surrounding keyframe poses   
+  surroundingKeyframeSearchRadius: 15.0         # meters, within n meters scan-to-map optimization (when loop closure disabled)
   surroundingKeyframeMapLeafSize: 0.2           # downsample local map point cloud
 
   # Loop closure
@@ -82,7 +82,7 @@ lviorf:
   loopClosureEnableFlag: true
   loopClosureFrequency: 1.0                     # Hz, regulate loop closure constraint add frequency
   surroundingKeyframeSize: 50                   # submap size (when loop closure enabled)
-  historyKeyframeSearchRadius: 15.0             # meters, key frame that is within n meters from current pose will be considerd for loop closure
+  historyKeyframeSearchRadius: 50.0             # meters, key frame that is within n meters from current pose will be considerd for loop closure
   historyKeyframeSearchTimeDiff: 30.0           # seconds, key frame that is n seconds older will be considered for loop closure
   historyKeyframeSearchNum: 25                  # number of hostory key frames will be fused into a submap for loop closure
   loopClosureICPSurfLeafSize: 0.2               # downsample icp point cloud  

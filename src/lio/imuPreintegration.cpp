@@ -116,9 +116,9 @@ public:
     {
         // std::cout<<"订阅到odometry/imu_incremental话题"<<std::endl;
         //发布odom系到map系的静态TF，默认是同一个坐标系
-        static tf::TransformBroadcaster tfMap2Odom;
-        static tf::Transform map_to_odom = tf::Transform(tf::createQuaternionFromRPY(0, 0, 0), tf::Vector3(0, 0, 0));
-        tfMap2Odom.sendTransform(tf::StampedTransform(map_to_odom, odomMsg->header.stamp, mapFrame, odometryFrame));
+        // static tf::TransformBroadcaster tfMap2Odom;
+        // static tf::Transform map_to_odom = tf::Transform(tf::createQuaternionFromRPY(0, 0, 0), tf::Vector3(0, 0, 0));
+        // tfMap2Odom.sendTransform(tf::StampedTransform(map_to_odom, odomMsg->header.stamp, mapFrame, odometryFrame));
 
         std::lock_guard<std::mutex> lock(mtx);
 
@@ -218,6 +218,9 @@ public:
 
     std::deque<sensor_msgs::Imu> imuQueOpt; //优化用的IMU数据队列
     std::deque<sensor_msgs::Imu> imuQueImu; //IMU里程计用的IMU数据队列
+
+    double last_imu_time = -1;
+    bool first_imu = true;
 
     gtsam::Pose3 prevPose_; //上一帧的位姿
     gtsam::Vector3 prevVel_; //上一帧的速度
@@ -530,6 +533,21 @@ public:
     // IMU callback
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imu_raw)
     {
+        if(first_imu)
+        {
+            first_imu = false;
+            last_imu_time = imu_raw->header.stamp.toSec();
+        }
+
+        if(abs(imu_raw->header.stamp.toSec()-last_imu_time) > 15.0/imuRate)
+        {
+            last_imu_time = imu_raw->header.stamp.toSec();
+            // resetParams(); //重置标志位（系统初始化标志位、第一次优化标志位、第一次优化时间）
+            return;
+        }
+
+
+
         std::lock_guard<std::mutex> lock(mtx);
 
         //IMU位姿转换，转到雷达坐标系下
@@ -597,6 +615,7 @@ public:
 
         pubImuOdometry.publish(odometry); //发布上一帧与当前帧的增量里程计
         // std::cout<<"发布/odometry/imu_incremental话题"<<std::endl;
+        last_imu_time = imu_raw->header.stamp.toSec();
     }
 };
 

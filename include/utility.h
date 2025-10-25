@@ -68,26 +68,26 @@ std::shared_ptr<CommonLib::common_lib> common_lib_;
 
 enum class SensorType { VELODYNE, OUSTER, LIVOX, ROBOSENSE, MULRAN, RSHelios};
 
-namespace RSHelios_ros {
-// rslidar和velodyne的格式有微小的区别
-// rslidar的点云格式
-struct RsPointXYZIRT {
-    PCL_ADD_POINT4D;
-    float intensity;
-    uint16_t ring = 0;
-    double timestamp = 0;
+// namespace RSHelios_ros {
+// // rslidar和velodyne的格式有微小的区别
+// // rslidar的点云格式
+// struct RsPointXYZIRT {
+//     PCL_ADD_POINT4D;
+//     float intensity;
+//     uint16_t ring = 0;
+//     double timestamp = 0;
 
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-} EIGEN_ALIGN16;
-}
-POINT_CLOUD_REGISTER_POINT_STRUCT(RSHelios_ros::RsPointXYZIRT,
-    (float, x, x)
-    (float, y, y)
-    (float, z, z)
-    (float, intensity, intensity)
-    (std::uint16_t, ring, ring)
-    (double, timestamp, timestamp)   
-)
+//     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+// } EIGEN_ALIGN16;
+// }
+// POINT_CLOUD_REGISTER_POINT_STRUCT(RSHelios_ros::RsPointXYZIRT,
+//     (float, x, x)
+//     (float, y, y)
+//     (float, z, z)
+//     (float, intensity, intensity)
+//     (std::uint16_t, ring, ring)
+//     (double, timestamp, timestamp)   
+// )
 
 class ParamServer
 {
@@ -404,8 +404,8 @@ void imuRPY2rosRPY(sensor_msgs::Imu *thisImuMsg, T *rosRoll, T *rosPitch, T *ros
     tf::Quaternion orientation;
     tf::quaternionMsgToTF(thisImuMsg->orientation, orientation);
     tf::Matrix3x3(orientation).getRPY(imuRoll, imuPitch, imuYaw);
-    std::cout<<"imu-orientation:"<<thisImuMsg->orientation.x<<","<<thisImuMsg->orientation.y<<","<<thisImuMsg->orientation.z
-    <<","<<thisImuMsg->orientation.w<<std::endl;
+    // std::cout<<"imu-orientation:"<<thisImuMsg->orientation.x<<","<<thisImuMsg->orientation.y<<","<<thisImuMsg->orientation.z
+    // <<","<<thisImuMsg->orientation.w<<std::endl;
 
     *rosRoll = imuRoll;
     *rosPitch = imuPitch;

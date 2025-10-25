@@ -199,6 +199,9 @@ target_link_libraries(${PROJECT_NAME}_gps_imu_node ${catkin_LIBRARIES} ${PCL_LIB
 add_executable(${PROJECT_NAME}_gpsOdometry src/gio/simpleGpsOdom.cpp)
 target_link_libraries(${PROJECT_NAME}_gpsOdometry ${catkin_LIBRARIES} libGeographiccc)
 
+add_executable(${PROJECT_NAME}_gpsOdometry1 src/gio/simpleGpsOdom1.cpp)
+target_link_libraries(${PROJECT_NAME}_gpsOdometry1 ${catkin_LIBRARIES} libGeographiccc)
+
 
 add_executable(global_fusion_node 
 	src/loosen_fusion/global_fusion/globalOptNode.cpp

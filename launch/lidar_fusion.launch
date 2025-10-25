@@ -2,7 +2,8 @@
     <rosparam command="load" file="$(find lviorf)/config/lidar_preprocess/input_lidar_set.yaml" />
     <!-- 启动融合节点 -->
     <node pkg="lviorf" type="lidar_fusion_node" name="lidar_fusion_node" output="screen"/>
-
+        <!-- <param name="output_topic" value="/fused_points" />
+    </node> -->
     <!-- 雷达坐标系定义（需要根据实际安装位置修改参数） -->
     <!-- 后左雷达 -->
     <node pkg="tf2_ros" type="static_transform_publisher" name="lidar_back_left_tf"

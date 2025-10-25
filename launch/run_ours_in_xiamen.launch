@@ -5,11 +5,25 @@
 
     <!-- base_link 2 rslidar_front -->
      <!-- 前右雷达 -->
-    <node pkg="tf2_ros" type="static_transform_publisher" name="lidar_front_right_tf"
-          args="7.1574 -1.44 1.9095 0.00790578 -0.0086239 -0.19297626 0.98113368 base_link rslidar"/>
+    <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="lidar_front_right_tf"
+          args="7.1574 -1.44 1.9095 0.00790578 -0.0086239 -0.19297626 0.98113368 base_link rslidar"/> -->
     
     <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="map_2_odom_tf"
         args="0 0 0 0 0 0 0 map odom"/> -->
+
+    <node pkg="tf2_ros" type="static_transform_publisher" name="lidar_back_left_tf"
+          args="-7.23635619 1.0377513 1.91371889 -0.02002174 0.00128006 0.96825324 0.2491649 base_link lidar1"/>
+
+    <!-- 前右雷达 -->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="lidar_front_right_tf"
+          args="7.1574 -1.44 1.9095 0.00790578 -0.0086239 -0.19297626 0.98113368 base_link lidar2"/>
+
+    <node pkg="tf2_ros" type="static_transform_publisher" name="map_2_odom_tf"
+          args="0 0 0 0 0 0 1 map odom"/>
+
+    <!-- <node name="republish" type="republish" pkg="image_transport" 
+      args="compressed in:=/m_gmsl_1/image_compressed raw out:=/camera/image_raw" /> -->
+
     
     <!-- Lidar odometry param -->
     <rosparam file="$(find lviorf)/config/pinhole/xiamen_params_lidar.yaml" command="load" />
@@ -25,7 +39,7 @@
 
     <rosparam command="load" file="$(find lviorf)/config/vlp_gps.yaml" />
 
-    <include file="$(find lviorf)/launch/gnss_odom_calibrator.launch" />
+    <!-- <include file="$(find lviorf)/launch/gnss_odom_calibrator.launch" /> -->
 
     <!--- LOAM -->
     <include file="$(find lviorf)/launch/include/module_loam.launch" />
@@ -33,22 +47,6 @@
     <!--- Robot State TF -->
     <!-- <include file="$(find lviorf)/launch/include/module_robot_state_publisher.launch" /> -->
 
-    <!--- Run IMU-GPS-fusion-localizer -->
-    <!-- <include file="$(find lviorf)/launch/imu_gps_localization.launch" /> -->
-    <!-- <param name="acc_noise"       type="double" value="1e-2" />
-    <param name="gyro_noise"      type="double" value="1e-4" />
-    <param name="acc_bias_noise"  type="double" value="1e-6" />
-    <param name="gyro_bias_noise" type="double" value="1e-8" />
-
-    <param name="I_p_Gps_x"       type="double" value="0.0" />
-    <param name="I_p_Gps_y"       type="double" value="0.0" />
-    <param name="I_p_Gps_z"       type="double" value="0.0" />
-
-    <param name="log_folder"      type="string" value="$(find lviorf)" />
-
-    <node name="$(arg project)_gps_imu_node" pkg="$(arg project)" type="$(arg project)_gps_imu_node" output="screen" /> -->
-    <!-- <node pkg="lviorf" type="lviorf_gpsOdometry" name="lviorf_gpsOdometry" output="screen"/> -->
-    <!--- Run Rviz-->
     <include file="$(find lviorf)/launch/include/module_rviz.launch" />
 
     

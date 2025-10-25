@@ -36,6 +36,8 @@ public:
         nh_.param<double>("origin_lat", origin_lat_, 0.0);
         nh_.param<double>("origin_lon", origin_lon_, 0.0);
         nh_.param<double>("origin_alt", origin_alt_, 0.0);
+        nh_.param<int>("use_original_flag", set_origin_from, 1);
+        
 
         // Subscribers
         odom_sub_ = nh_.subscribe(odom_topic_, 100, &GNSSOdomCalibrator::odomCallback, this);
@@ -64,10 +66,12 @@ public:
         ROS_INFO("GNSS topic: %s", gnss_topic_.c_str());
         ROS_INFO("Minimum samples: %d", min_samples_);
 
-        setOrigin(origin_lat_, origin_lon_, origin_alt_);
-        // if (!auto_set_origin_ && origin_lat_ != 0.0 && origin_lon_ != 0.0) {
-        //     setOrigin(origin_lat_, origin_lon_, origin_alt_);
-        // }
+        if(set_origin_from == 2)
+        {
+            setOrigin(origin_lat_, origin_lon_, origin_alt_);
+        }else{
+            std::cout<<"等待使用第一帧进行初始化"<<std::endl;
+        }
     }
 
 private:
@@ -87,15 +91,6 @@ private:
         Eigen::Vector3d enu_position;
     };
 
-    // bool setOriginCallback(geographic_msgs::GeoPoint::Request& req,
-    //                      geographic_msgs::GeoPoint::Response& res)
-    // {
-    //     setOrigin(req.latitude, req.longitude, req.altitude);
-    //     res.success = true;
-    //     res.message = "Origin set successfully";
-    //     return true;
-    // }
-
     void setOrigin(double lat, double lon, double alt)
     {
         origin_lat_ = lat;
@@ -108,55 +103,6 @@ private:
                  origin_lat_, origin_lon_, origin_alt_);
     }
 
-    Eigen::Vector3d llhToEnu(double lat, double lon, double alt)
-    {
-        if (!origin_set_) {
-            if (auto_set_origin_) {
-                setOrigin(lat, lon, alt);
-                return Eigen::Vector3d::Zero();
-            } else {
-                ROS_WARN_THROTTLE(1.0, "ENU origin not set, cannot convert coordinates");
-                return Eigen::Vector3d::Zero();
-            }
-        }
-
-        // Convert LLH to ECEF
-        const double a = 6378137.0; // WGS84 semi-major axis
-        const double e2 = 6.69437999014e-3; // WGS84 first eccentricity squared
-
-        double sin_lat = sin(lat * M_PI / 180.0);
-        double cos_lat = cos(lat * M_PI / 180.0);
-        double sin_lon = sin(lon * M_PI / 180.0);
-        double cos_lon = cos(lon * M_PI / 180.0);
-
-        double N = a / sqrt(1 - e2 * sin_lat * sin_lat);
-        double x = (N + alt) * cos_lat * cos_lon;
-        double y = (N + alt) * cos_lat * sin_lon;
-        double z = (N * (1 - e2) + alt) * sin_lat;
-
-        // Convert origin to ECEF
-        double sin_origin_lat = sin(origin_lat_ * M_PI / 180.0);
-        double cos_origin_lat = cos(origin_lat_ * M_PI / 180.0);
-        double sin_origin_lon = sin(origin_lon_ * M_PI / 180.0);
-        double cos_origin_lon = cos(origin_lon_ * M_PI / 180.0);
-
-        double N_origin = a / sqrt(1 - e2 * sin_origin_lat * sin_origin_lat);
-        double x0 = (N_origin + origin_alt_) * cos_origin_lat * cos_origin_lon;
-        double y0 = (N_origin + origin_alt_) * cos_origin_lat * sin_origin_lon;
-        double z0 = (N_origin * (1 - e2) + origin_alt_) * sin_origin_lat;
-
-        // Convert ECEF to ENU
-        double dx = x - x0;
-        double dy = y - y0;
-        double dz = z - z0;
-
-        double east = -sin_origin_lon * dx + cos_origin_lon * dy;
-        double north = -sin_origin_lat * cos_origin_lon * dx - sin_origin_lat * sin_origin_lon * dy + cos_origin_lat * dz;
-        double up = cos_origin_lat * cos_origin_lon * dx + cos_origin_lat * sin_origin_lon * dy + sin_origin_lat * dz;
-
-        return Eigen::Vector3d(east, north, up);
-    }
-
     void gnssCallback(const sensor_msgs::NavSatFix::ConstPtr& msg)
     {
         if (msg->status.status < sensor_msgs::NavSatStatus::STATUS_FIX) {
@@ -164,14 +110,40 @@ private:
             return;
         }
 
-        std::lock_guard<std::mutex> lock(mutex_);
+        //1.设置第一帧为原点
+        if(!origin_set_)
+        {
+            map_geo_converter.Reset(msg->latitude, msg->longitude, msg->altitude);
+            origin_set_ = true;
+        
+            ROS_INFO("ENU origin set to: lat=%.8f, lon=%.8f, alt=%.3f", 
+                 msg->latitude, msg->longitude, msg->altitude);
+        }
 
+        //2.进行滤波，滤出跳变点
+        nav_sat_fix_msg_deque.push_back(*msg);
+        if(nav_sat_fix_msg_deque.size() >= 2)
+        {
+            double d1 = nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-1].altitude - nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-2].altitude;
+            double d2 = nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-1].longitude - nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-2].longitude;
+            double d3 = nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-1].latitude - nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-2].latitude;
+            if(abs(d1) >= 1.0 || abs(d2) >= 0.01 || abs(d3) >= 0.01)
+            {
+                std::cout<<"GPS跳变"<<std::endl;
+                nav_sat_fix_msg_deque.pop_back();
+                return;
+            }
+            nav_sat_fix_msg_deque.pop_front();
+        }
+
+
+
+        // std::lock_guard<std::mutex> lock(mutex_);
         GNSSData gnss_data;
         gnss_data.stamp = msg->header.stamp;
         gnss_data.latitude = msg->latitude;
         gnss_data.longitude = msg->longitude;
         gnss_data.altitude = msg->altitude;
-        // gnss_data.enu_position = llhToEnu(msg->latitude, msg->longitude, msg->altitude);
 
         Eigen::Vector3d lla(msg->latitude, msg->longitude, msg->altitude);
         double map_x,map_y,map_z;
@@ -191,7 +163,7 @@ private:
         // Publish ENU coordinates for visualization
         geometry_msgs::PoseStamped enu_pose;
         enu_pose.header.stamp = msg->header.stamp;
-        enu_pose.header.frame_id = "enu";
+        enu_pose.header.frame_id = "map";
         enu_pose.pose.position.x = gnss_data.enu_position.x();
         enu_pose.pose.position.y = gnss_data.enu_position.y();
         enu_pose.pose.position.z = gnss_data.enu_position.z();
@@ -205,7 +177,7 @@ private:
 
         geometry_msgs::PoseStamped gnss_pose;
         gnss_pose.header.stamp = msg->header.stamp;
-        gnss_pose.header.frame_id = odom_frame_;
+        gnss_pose.header.frame_id = "map";
         
         gnss_pose.pose.position.x = gnss_data.enu_position.x();
         gnss_pose.pose.position.y = gnss_data.enu_position.y();
@@ -215,7 +187,7 @@ private:
         gnss_pose.pose.orientation.x = 0;
         gnss_pose.pose.orientation.y = 0;
         gnss_pose.pose.orientation.z = 0;
-        gnss_path.header.frame_id = odom_frame_;
+        gnss_path.header.frame_id = "map";
         gnss_path.header.stamp = msg->header.stamp;
         gnss_path.poses.push_back(gnss_pose);
         gnss_path_pub_.publish(gnss_path);
@@ -253,7 +225,7 @@ private:
 
         geometry_msgs::PoseStamped lidar_pose;
         lidar_pose.header.stamp = msg->header.stamp;
-        lidar_pose.header.frame_id = odom_frame_;
+        lidar_pose.header.frame_id = "map";
         
         lidar_pose.pose.position.x = msg->pose.pose.position.x;
         lidar_pose.pose.position.y = msg->pose.pose.position.y;
@@ -263,7 +235,7 @@ private:
         lidar_pose.pose.orientation.x = msg->pose.pose.orientation.x;
         lidar_pose.pose.orientation.y = msg->pose.pose.orientation.y;
         lidar_pose.pose.orientation.z = msg->pose.pose.orientation.z;
-        lidar_path.header.frame_id = odom_frame_;
+        lidar_path.header.frame_id = "map";
         lidar_path.header.stamp = msg->header.stamp;
         lidar_path.poses.push_back(lidar_pose);
         lidar_path_pub_.publish(lidar_path);
@@ -426,7 +398,7 @@ private:
 
         nav_msgs::Odometry odom_msg;
         odom_msg.header.stamp = latest_gnss.stamp;
-        odom_msg.header.frame_id = odom_frame_;
+        odom_msg.header.frame_id = "map";
         odom_msg.child_frame_id = "gnss_calibrated";
         odom_msg.pose.pose.position.x = transformed_pos.x();
         odom_msg.pose.pose.position.y = transformed_pos.y();
@@ -437,7 +409,7 @@ private:
         // Publish transform
         geometry_msgs::TransformStamped transform;
         transform.header.stamp = ros::Time::now();
-        transform.header.frame_id = odom_frame_;
+        transform.header.frame_id = "map";
         transform.child_frame_id = "gnss_calibrated";
         
         transform.transform.translation.x = transform_translation_.x();
@@ -453,11 +425,11 @@ private:
         tf_broadcaster_->sendTransform(transform);
 
         calibrated_pose.pose.position.z = 0.0;
-        calib_path.header.frame_id = odom_frame_;
+        calib_path.header.frame_id = "map";
         calib_path.header.stamp = latest_gnss.stamp;
         calib_path.poses.push_back(calibrated_pose);
         calib_path_pub_.publish(calib_path);
-
+        // std::cout<<"publish calib_path"<<std::endl;
 
     }
 
@@ -498,12 +470,16 @@ private:
     bool origin_set_;
     bool auto_set_origin_;
     double origin_lat_, origin_lon_, origin_alt_;
+    int set_origin_from;
 
     std::string odom_topic_, gnss_topic_, output_topic_;
     std::string odom_frame_, base_frame_;
     int min_samples_;
     double max_time_diff_;
     GeographicLib::LocalCartesian map_geo_converter; // 用于转全局坐标的类
+
+    //滤波使用
+    std::deque<sensor_msgs::NavSatFix> nav_sat_fix_msg_deque;
 };
 
 int main(int argc, char** argv)

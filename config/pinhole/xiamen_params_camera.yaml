@@ -4,7 +4,7 @@
 project_name: "lviorf"
 
 #common parameters
-imu_topic: "/bynav/imu/data_raw"  #IMU话题
+imu_topic: "/bynav/imu/data"  #IMU话题
 image_topic: "/m_gmsl_1/image_compressed"   # 图像话题
 point_cloud_topic: "lviorf/lidar/deskew/cloud_deskewed"
 
@@ -12,6 +12,16 @@ point_cloud_topic: "lviorf/lidar/deskew/cloud_deskewed"
 use_lidar: 1                     # whether use depth info from lidar or not
 lidar_skip: 1                    # skip this amount of scans
 align_camera_lidar_estimation: 1 # align camera and lidar estimation for visualization
+
+
+# lidar to camera extrinsic
+lidar_to_cam_tx: 0.05
+lidar_to_cam_ty: -0.07
+lidar_to_cam_tz: -0.07
+lidar_to_cam_rx: 0.0
+lidar_to_cam_ry: 0.0
+lidar_to_cam_rz: -0.04
+
 
 # camera to ros standard frame(front-left-up) extrinsic, Theoretically, it is a fixed value
 # for xiamen datasets(front-left-up)

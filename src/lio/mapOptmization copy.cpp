@@ -1139,7 +1139,6 @@ public:
     {
         pcl::PointCloud<PointType>::Ptr surroundingKeyPoses(new pcl::PointCloud<PointType>());
         pcl::PointCloud<PointType>::Ptr surroundingKeyPosesDS(new pcl::PointCloud<PointType>());
-        pcl::PointCloud<PointType>::Ptr surroundingKeyPosesDSRemoveFarTime(new pcl::PointCloud<PointType>());
         std::vector<int> pointSearchInd;
         std::vector<float> pointSearchSqDis;
 
@@ -1152,62 +1151,25 @@ public:
             surroundingKeyPoses->push_back(cloudKeyPoses3D->points[id]);
         }
 
-        //下采样
         downSizeFilterSurroundingKeyPoses.setInputCloud(surroundingKeyPoses);
         downSizeFilterSurroundingKeyPoses.filter(*surroundingKeyPosesDS);
-
-        //强度设置为最近的一帧
         for(auto& pt : surroundingKeyPosesDS->points)
         {
             kdtreeSurroundingKeyPoses->nearestKSearch(pt, 1, pointSearchInd, pointSearchSqDis);
             pt.intensity = cloudKeyPoses3D->points[pointSearchInd[0]].intensity;
         }
 
-
-                //去掉时间较远的邻近帧
-        for(int i = 0; i < surroundingKeyPosesDS->size(); i++)
-        {
-            int index = -1; 
-            double dis0 = sqrt(pow(surroundingKeyPosesDS->points[i].x-cloudKeyPoses3D->points[0].x,2)+
-                                    pow(surroundingKeyPosesDS->points[i].y-cloudKeyPoses3D->points[0].y,2)+
-                                    pow(surroundingKeyPosesDS->points[i].z-cloudKeyPoses3D->points[0].z,2));
-            for(int j = 0;j < cloudKeyPoses3D->size();j++)
-            {
-                double dis = sqrt(pow(surroundingKeyPosesDS->points[i].x-cloudKeyPoses3D->points[j].x,2)+
-                                    pow(surroundingKeyPosesDS->points[i].y-cloudKeyPoses3D->points[j].y,2)+
-                                    pow(surroundingKeyPosesDS->points[i].z-cloudKeyPoses3D->points[j].z,2));
-                if(dis <= dis0)
-                {
-                    index = j;
-                    dis0 = dis;
-                }
-            }
-            if (timeLaserInfoCur - cloudKeyPoses6D->points[index].time < 60.0) //60.0s内的帧作为关键帧
-                    surroundingKeyPosesDSRemoveFarTime->push_back(surroundingKeyPosesDS->points[i]); 
-
-        }
-
         // also extract some latest key frames in case the robot rotates in one position
         int numPoses = cloudKeyPoses3D->size();
         for (int i = numPoses-1; i >= 0; --i)
         {
-            if (timeLaserInfoCur - cloudKeyPoses6D->points[i].time < 5.0) //5.0s内的帧也作为关键帧
-                // surroundingKeyPosesDS->push_back(cloudKeyPoses3D->points[i]);
-                surroundingKeyPosesDSRemoveFarTime->push_back(cloudKeyPoses3D->points[i]);
+            if (timeLaserInfoCur - cloudKeyPoses6D->points[i].time < 10.0)
+                surroundingKeyPosesDS->push_back(cloudKeyPoses3D->points[i]);
             else
                 break;
         }
-
-
-
-
-
-
-
-        std::cout<<"cloudKeyPoses3D.size = "<<cloudKeyPoses3D->size()<<",surroundingKeyPosesDS.size="<<surroundingKeyPosesDS->size()
-        <<",surroundingKeyPosesDSRemoveFarTime.size="<<surroundingKeyPosesDSRemoveFarTime->size()<<std::endl;
-        extractCloud(surroundingKeyPosesDSRemoveFarTime);
-        // extractCloud(surroundingKeyPosesDS);
+        std::cout<<"cloudKeyPoses3D.size = "<<cloudKeyPoses3D->size()<<",surroundingKeyPosesDS.size="<<surroundingKeyPosesDS->size()<<std::endl;
+        extractCloud(surroundingKeyPosesDS);
     }
 
     void extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtract)

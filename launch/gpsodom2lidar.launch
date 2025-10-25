@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<launch>
+    <node name="lviorf_gpsOdometry1" 
+          pkg="lviorf" 
+          type="lviorf_gpsOdometry1" 
+          output="screen">
+        <param name="max_queue_size" value="100000" />
+        <param name="max_time_diff" value="0.1" />
+        <param name="min_data_points" value="100" />
+        <param name="laser_odom_frame" value="map" />
+        <param name="gps_odom_frame" value="map" />
+        <param name="transformed_gps_frame" value="map" />
+        <param name="base_frame" value="base_link" />
+    </node>
+</launch>

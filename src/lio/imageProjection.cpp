@@ -1,5 +1,37 @@
 #include "utility.h"
 #include "lviorf/cloud_info.h"
+#include <ros/ros.h>
+#include <message_filters/subscriber.h>
+#include <message_filters/sync_policies/approximate_time.h>
+#include <message_filters/synchronizer.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
+#include <vector>
+#include <sensor_msgs/PointCloud2.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/filters/filter.h>
+
+namespace RSHelios_ros
+{
+    // rslidar和velodyne的格式有微小的区别
+    // rslidar的点云格式
+    struct RsPointXYZIRT
+    {
+        PCL_ADD_POINT4D;
+        float intensity;
+        uint16_t ring = 0;
+        double timestamp = 0;
+
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    } EIGEN_ALIGN16;
+}
+POINT_CLOUD_REGISTER_POINT_STRUCT(RSHelios_ros::RsPointXYZIRT,
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(std::uint16_t, ring, ring)(double, timestamp, timestamp))
+
+
 // <!-- lviorf_localization_yjz_lucky_boy -->
 struct VelodynePointXYZIRT
 {
@@ -66,7 +98,9 @@ using PointXYZIRT = VelodynePointXYZIRT;
 
 const int queueLength = 2000;
 
-
+using namespace sensor_msgs;
+using namespace message_filters;
+typedef sync_policies::ApproximateTime<PointCloud2, PointCloud2> SyncPolicy;
 
 
 class ImageProjection : public ParamServer
@@ -121,9 +155,19 @@ private:
     double timeScanEnd;
     std_msgs::Header cloudHeader;
 
+    ros::Publisher pub_;
+    tf2_ros::Buffer tf_buffer_;
+    tf2_ros::TransformListener tf_listener_;
+    message_filters::Subscriber<PointCloud2> sub_back_left_;
+    message_filters::Subscriber<PointCloud2> sub_front_right_;
+    boost::shared_ptr<Synchronizer<SyncPolicy>> sync_;
+
+    double last_imu_time = -1;
+    bool first_imu = true;
+
 public:
     //构造函数
-    ImageProjection():deskewFlag(0)
+    ImageProjection():deskewFlag(0),tf_listener_(tf_buffer_)
     {
         //订阅IMU原始数据
         subImu        = nh.subscribe<sensor_msgs::Imu>(imuTopic, 2000, &ImageProjection::imuHandler, this, ros::TransportHints().tcpNoDelay());
@@ -140,6 +184,20 @@ public:
         
         //发布自定义格式的点云（带IMU预积分、里程计信息）
         pubLaserCloudInfo = nh.advertise<lviorf::cloud_info> ("lviorf/deskew/cloud_info", 1); //自定义格式的点云，含有更多的信息
+
+        // 初始化订阅者
+        sub_back_left_.subscribe(nh, "/lidar_back_left_helios32", 1);
+        sub_front_right_.subscribe(nh, "/lidar_front_right_helios32", 1);
+
+                // 创建同步策略
+        sync_.reset(new Synchronizer<SyncPolicy>(SyncPolicy(10),
+                                                 sub_back_left_, 
+                                                 sub_front_right_
+                                                 ));
+        sync_->registerCallback(boost::bind(&ImageProjection::fusionCallback,
+                                            this, _1, _2));
+
+        pub_ = nh.advertise<PointCloud2>("/fused_points", 1);
 
         allocateMemory();
         resetParameters();
@@ -179,11 +237,148 @@ public:
 
     ~ImageProjection(){}
 
+    void fusionCallback(const PointCloud2ConstPtr &cloud1,const PointCloud2ConstPtr &cloud3)
+    {
+        try
+        {
+                sensor_msgs::PointCloud2 cloud11 = *cloud1;
+                sensor_msgs::PointCloud2 cloud33 = *cloud3;
+                cloud11.header.frame_id = "lidar1";
+                cloud33.header.frame_id = "lidar2";
+                // 转换点云到基坐标系,rslidar数据
+                auto t1 = transformCloud_rslidar(cloud11, "base_link");
+                auto t3 = transformCloud_rslidar(cloud33, "base_link");
+
+                // auto t8 = transformCloud_rslidar(cloud8, "base_link");
+                pcl::PointCloud<RSHelios_ros::RsPointXYZIRT> fused_cloud;
+                // if (lidar_back_left_helios32)
+                // {
+                    fused_cloud += *t1;
+                // }
+                // if (lidar_front_right_helios32)
+                // {
+                    fused_cloud += *t3;
+                // }
+
+                pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>::Ptr filtered_cloud(new pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>);
+                for (const auto &point : fused_cloud.points)
+                {
+                    RSHelios_ros::RsPointXYZIRT pt;
+                    pt.x = point.x;
+                    pt.y = point.y;
+                    pt.z = point.z;
+                    pt.intensity = point.intensity;
+                    pt.ring = point.ring;
+                    pt.timestamp = point.timestamp;
+                    // std::cout<<"ring:"<<pt.ring<<",pt.timestamp="<<pt.timestamp<<std::endl;
+
+
+                    // 检查点是否有效（非NaN和非无限远）
+                    if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z)) {
+                        filtered_cloud->points.push_back(pt);
+                    }
+                }
+
+                filtered_cloud->is_dense = true;
+
+                // // 2. downsample new cloud (save memory)
+                // pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>::Ptr laser_cloud_in_ds(new pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>());
+                // static pcl::VoxelGrid<RSHelios_ros::RsPointXYZIRT> downSizeFilter;
+                // downSizeFilter.setLeafSize(0.2, 0.2, 0.1);
+                // downSizeFilter.setInputCloud(filtered_cloud); //
+                // downSizeFilter.filter(*laser_cloud_in_ds);
+                // std::cout<<"filter before:"<<filtered_cloud->points.size()<<",after:"<<laser_cloud_in_ds->points.size()<<std::endl;
+                // *filtered_cloud = *laser_cloud_in_ds;
+                
+
+                std::sort(filtered_cloud->points.begin(), filtered_cloud->points.end(),
+                [](const RSHelios_ros::RsPointXYZIRT& a, const RSHelios_ros::RsPointXYZIRT& b) {
+                    return a.timestamp < b.timestamp;
+                });
+
+                double min_time = filtered_cloud->points.front().timestamp;
+
+
+                // 发布结果
+                sensor_msgs::PointCloud2 output;
+                pcl::toROSMsg(*filtered_cloud, output);
+                output.header.stamp = ros::Time().fromSec(min_time);
+                output.header.frame_id = "base_link";
+                //转到前雷达下
+                sensor_msgs::PointCloud2 transformed_cloud;
+                tf_buffer_.transform(output, transformed_cloud, "lidar2", ros::Duration(0.1));
+                // transformed_cloud.header.stamp = ros::Time().fromSec(min_time);
+                // transformed_cloud.header.frame_id = "lidar2";
+                pub_.publish(transformed_cloud);
+
+                FusedCloudHandle(transformed_cloud);
+
+
+
+            
+       
+        }
+        catch (tf2::TransformException &ex)
+        {
+            ROS_WARN("Transform failed: %s", ex.what());
+        }
+    }
+
+    pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>::Ptr transformCloud_rslidar(PointCloud2 &cloud,const std::string &target_frame)
+    {
+        pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>::Ptr pcl_cloud1(new pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>);
+        pcl::fromROSMsg(cloud,*pcl_cloud1);
+        PointCloud2 cloud_tmp;
+        cloud_tmp.header = cloud.header;
+        pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>::Ptr pcl_cloud2(new pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>);
+        for(auto &point: pcl_cloud1->points)
+        {
+            double distance = sqrt(point.x*point.x+point.y*point.y+point.z*point.z);
+            if(distance > 200 || distance < 5.0)
+            {
+                continue;
+            }
+            if(pcl::isFinite(point))
+            {
+                pcl_cloud2->push_back(point);
+                pcl_cloud2->back().ring = point.ring;
+                pcl_cloud2->back().timestamp = point.timestamp;
+                pcl_cloud2->back().intensity = point.intensity;
+                // std::cout<<"ring="<<point.ring;
+                // pcl_cloud2.ring = point.ring;
+            }
+        }
+        // std::cout<<"input size:"<<pcl_cloud1->points.size()<<",valid size:"<<pcl_cloud2->points.size()<<std::endl;
+
+        pcl::toROSMsg(*pcl_cloud2,cloud_tmp);
+        cloud_tmp.header = cloud.header;
+        PointCloud2 transformed_cloud;
+        tf_buffer_.transform(cloud_tmp, transformed_cloud, target_frame, ros::Duration(0.1));
+
+        pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>::Ptr pcl_cloud(new pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>);
+        pcl::fromROSMsg(transformed_cloud, *pcl_cloud);
+        return pcl_cloud;
+    }
+
 
     //IMU回调函数，订阅到imu数据帧后存入队列中
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imuMsg)
     {
         // ROS_INFO("imuHandler");
+        if(first_imu)
+        {
+            first_imu = false;
+            last_imu_time = imuMsg->header.stamp.toSec();
+        }
+
+        if(abs(imuMsg->header.stamp.toSec()-last_imu_time) > 15.0/imuRate)
+        {
+            last_imu_time = imuMsg->header.stamp.toSec();
+            // resetParams(); //重置标志位（系统初始化标志位、第一次优化标志位、第一次优化时间）
+            return;
+        }
+
+
         sensor_msgs::Imu thisImu = imuConverter(*imuMsg);
 
         //使用厦门数据时
@@ -208,6 +403,7 @@ public:
         // tf::Matrix3x3(orientation).getRPY(imuRoll, imuPitch, imuYaw);
         // cout << "IMU roll pitch yaw: " << endl;
         // cout << "roll: " << imuRoll << ", pitch: " << imuPitch << ", yaw: " << imuYaw << endl << endl;
+        last_imu_time = imuMsg->header.stamp.toSec();
     }
 
 
@@ -245,14 +441,308 @@ public:
         resetParameters();
     }
 
+    void FusedCloudHandle(sensor_msgs::PointCloud2 laserCloudMsg)
+    {
+        ROS_INFO("FusedCloudHandle start");
+        //检查激光点云是否符合要求
+        if (!cacheFusePointCloud(laserCloudMsg))
+        {
+            std::cout<<"当前帧激光点云不符合要求,return"<<std::endl;
+            return;
+        }
+
+        //把IMU、激光里程计、视觉里程计的信息赋值到自定义的激光帧上
+        if (!deskewInfo())
+        {
+            std::cout<<"当前帧激光点云不符合要求,无IMU信息,return"<<std::endl;
+            return;
+        }    
+
+        //真正的点云去畸变处理
+        projectPointCloud();
+
+        ROS_INFO("FusedCloudHandle end");
+
+        publishClouds();
+
+        resetParameters();
+    }
+
 
     bool cachePointCloud(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     {
-        
+
         // cache point cloud，前面两帧点云都不处理
         
         cloudQueue.push_back(*laserCloudMsg);
         std::cout<<"订阅到的输入点云帧队列大小："<<cloudQueue.size()<<std::endl;
+        if (cloudQueue.size() <= 2) //点云队列中的点云帧数量小于2，直接返回
+            return false;
+
+        //从队列中取出最早的点云帧
+        currentCloudMsg = std::move(cloudQueue.front());
+        cloudQueue.pop_front();
+
+        pcl::PointCloud<RSHelios_ros::RsPointXYZIRT> pl_orig_RSHelios;
+        // pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>::Ptr pl_orig_RSHelios1(new pcl::PointCloud<RSHelios_ros::RsPointXYZIRT>);
+        // pcl::fromROSMsg(currentCloudMsg, *pl_orig_RSHelios1);
+        // for (const RSHelios_ros::RsPointXYZIRT point : pl_orig_RSHelios1->points)
+        // {
+        //     // std::cout<<"ring:"<<point.ring<<",timestamp="<<point.timestamp<<std::endl;
+        // }
+        
+        //根据激光雷达的类型处理点云数据
+        if (sensor == SensorType::VELODYNE || sensor == SensorType::LIVOX)
+        {
+            pcl::moveFromROSMsg(currentCloudMsg, *laserCloudIn);
+        }else if (sensor == SensorType::OUSTER)
+        {
+            // Convert to Velodyne format
+            pcl::moveFromROSMsg(currentCloudMsg, *tmpOusterCloudIn);
+            laserCloudIn->points.resize(tmpOusterCloudIn->size());
+            laserCloudIn->is_dense = tmpOusterCloudIn->is_dense;
+            for (size_t i = 0; i < tmpOusterCloudIn->size(); i++)
+            {
+                auto &src = tmpOusterCloudIn->points[i];
+                auto &dst = laserCloudIn->points[i];
+                dst.x = src.x;
+                dst.y = src.y;
+                dst.z = src.z;
+                dst.intensity = src.intensity;
+                dst.ring = src.ring;
+                dst.time = src.t * 1e-9f;
+            }
+        } // <!-- lviorf_yjz_lucky_boy -->
+        else if (sensor == SensorType::MULRAN)
+        {
+            // Convert to Velodyne format
+            pcl::moveFromROSMsg(currentCloudMsg, *tmpMulranCloudIn);
+            laserCloudIn->points.resize(tmpMulranCloudIn->size());
+            laserCloudIn->is_dense = tmpMulranCloudIn->is_dense;
+            for (size_t i = 0; i < tmpMulranCloudIn->size(); i++)
+            {
+                auto &src = tmpMulranCloudIn->points[i];
+                auto &dst = laserCloudIn->points[i];
+                dst.x = src.x;
+                dst.y = src.y;
+                dst.z = src.z;
+                dst.intensity = src.intensity;
+                dst.ring = src.ring;
+                dst.time = static_cast<float>(src.t);
+            }
+        } // <!-- lviorf_yjz_lucky_boy -->
+        else if (sensor == SensorType::ROBOSENSE) {
+            pcl::PointCloud<RobosensePointXYZIRT>::Ptr tmpRobosenseCloudIn(new pcl::PointCloud<RobosensePointXYZIRT>());
+            // Convert to robosense format
+            pcl::moveFromROSMsg(currentCloudMsg, *tmpRobosenseCloudIn);
+            laserCloudIn->points.resize(tmpRobosenseCloudIn->size());
+            laserCloudIn->is_dense = tmpRobosenseCloudIn->is_dense;
+
+            double start_stamptime = tmpRobosenseCloudIn->points[0].timestamp;
+            for (size_t i = 0; i < tmpRobosenseCloudIn->size(); i++) {
+                auto &src = tmpRobosenseCloudIn->points[i];
+                auto &dst = laserCloudIn->points[i];
+                dst.x = src.x;
+                dst.y = src.y;
+                dst.z = src.z;
+                dst.intensity = src.intensity;
+                dst.ring = src.ring;
+                dst.time = src.timestamp - start_stamptime;
+            }
+        }  //<!-- mzj -->
+        else if(sensor == SensorType::RSHelios)
+        {
+            // Convert to Velodyne format
+            std::cout<<"RSHelios 雷达"<<std::endl;
+            pcl::fromROSMsg(currentCloudMsg, pl_orig_RSHelios);
+
+            pcl::PointCloud<RSHelios_ros::RsPointXYZIRT> filtered_cloud;
+            for (const auto &point : pl_orig_RSHelios.points)
+            {
+                // std::cout<<"ring:"<<point.ring<<",pt.timestamp="<<point.timestamp<<std::endl;
+
+                double distance = sqrt(point.x*point.x+point.y*point.y+point.z*point.z);
+                if(distance > 100 || distance < 5.0)
+                {
+                    continue;
+                }
+
+                // 检查点是否有效（非NaN和非无限远）
+                if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z)) {
+                    filtered_cloud.push_back(point);
+                }
+            }
+            filtered_cloud.is_dense = true;
+            // std::cout<<"nan前:"<<pl_orig_RSHelios.size()<<",nan后:"<<filtered_cloud.size()<<std::endl;
+
+            laserCloudIn->points.resize(filtered_cloud.size());
+            laserCloudIn->is_dense = filtered_cloud.is_dense;
+            // to new pointcloud
+            double start_stamptime = filtered_cloud.points[0].timestamp;
+            for (int i = 0; i < filtered_cloud.points.size(); i++) {
+                auto &src = filtered_cloud.points[i];
+                auto &dst = laserCloudIn->points[i];
+                dst.x = src.x;
+                dst.y = src.y;
+                dst.z = src.z;
+                dst.intensity = src.intensity;
+                dst.ring = src.ring;
+                dst.time = src.timestamp - start_stamptime;
+                // ROS_INFO("%.11f,%.6f",src.timestamp,dst.time);
+                // std::cout<<src.ring<<",dst.ring="<<dst.ring<<std::endl;
+                // std::cout<<src.timestamp<<",dst.time="<<dst.time<<std::endl;
+                // if (has_nan(pl_orig_RSHelios.points[point_id]))
+                //     continue;
+                // velodyne_ros::Point new_point;
+                // new_point.x = pl_orig_RSHelios.points[point_id].x;
+                // new_point.y = pl_orig_RSHelios.points[point_id].y;
+                // new_point.z = pl_orig_RSHelios.points[point_id].z;
+                // new_point.intensity = pl_orig_RSHelios.points[point_id].intensity;
+                // new_point.ring = pl_orig_RSHelios.points[point_id].ring;
+                // // 计算相对于第一个点的相对时间
+                // // new_point.time = pl_orig_RSHelios.points[point_id].timestamp;
+                // new_point.time =float(pl_orig_RSHelios.points[point_id].timestamp -
+                //                     pl_orig_RSHelios.points[0].timestamp);
+                // if(point_id <12)
+                // {
+                // printf("point_id:%d (%f, %f, %f, %f) ring:%d timestamp:%lf timestamp0:%lf new_point.time:%f\n",point_id,new_point.x,new_point.y,new_point.z,
+                // new_point.intensity,new_point.ring,pl_orig_RSHelios.points[point_id].timestamp,pl_orig_RSHelios.points[0].timestamp,new_point.time);
+                // }
+                // pl_orig.points.push_back(new_point);
+            }
+            
+        } 
+        else {
+            ROS_ERROR_STREAM("Unknown sensor type: " << int(sensor));
+            ros::shutdown();
+        }
+
+        //点云校验，非RSHelios32 雷达
+        if(sensor != SensorType::RSHelios)
+        {
+            cloudHeader = currentCloudMsg.header;
+            timeScanCur = cloudHeader.stamp.toSec();
+            timeScanEnd = timeScanCur + laserCloudIn->points.back().time;
+            // std::cout<<"当前点云帧开始时间："<<timeScanCur<<",持续时间:"<<laserCloudIn->points.back().time<<std::endl;
+
+            // check dense flag
+            if (laserCloudIn->is_dense == false)
+            {
+                ROS_ERROR("Point cloud is not in dense format, please remove NaN points first!");
+                ros::shutdown();
+            }
+
+            // check ring channel
+            static int ringFlag = 0;
+            if (ringFlag == 0)
+            {
+                ringFlag = -1;
+                for (int i = 0; i < (int)currentCloudMsg.fields.size(); ++i)
+                {
+                    if (currentCloudMsg.fields[i].name == "ring")
+                    {
+                        ringFlag = 1;
+                        break;
+                    }
+                }
+                if (ringFlag == -1)
+                {
+                    ROS_ERROR("Point cloud ring channel not available, please configure your point cloud data!");
+                    ros::shutdown();
+                }
+            }
+
+            // check point time
+            //点的时间校验
+            if (deskewFlag == 0)
+            {
+                deskewFlag = -1;
+                for (auto &field : currentCloudMsg.fields)
+                {
+                    if (field.name == "time" || field.name == "t")
+                    {
+                        deskewFlag = 1;
+                        break;
+                    }
+                }
+                if (deskewFlag == -1) //点无时间戳信息
+                {
+                    std::cout<<"点云中的点无时间信息"<<std::endl;
+                    // ROS_WARN("Point cloud timestamp not available, deskew function disabled, system will drift significantly!");
+                    
+                }
+            }
+
+        }
+        else //针对RSHelios 雷达点云的校验
+        {
+            cloudHeader = currentCloudMsg.header;
+            timeScanCur = cloudHeader.stamp.toSec();
+            timeScanEnd = timeScanCur + laserCloudIn->points.back().time;
+            // std::cout<<"当前点云帧开始时间："<<timeScanCur<<",持续时间:"<<laserCloudIn->points.back().time<<std::endl;
+
+            // check dense flag
+            if (laserCloudIn->is_dense == false)
+            {
+                ROS_ERROR("Point cloud is not in dense format, please remove NaN points first!");
+                ros::shutdown();
+            }
+
+            // check ring channel
+            static int ringFlag = 0;
+            if (ringFlag == 0)
+            {
+                ringFlag = -1;
+                for (int i = 0; i < (int)currentCloudMsg.fields.size(); ++i)
+                {
+                    if (currentCloudMsg.fields[i].name == "ring")
+                    {
+                        std::cout<<"点云中有线数信息"<<std::endl;
+                        ringFlag = 1;
+                        break;
+                    }
+                }
+                if (ringFlag == -1)
+                {
+                    ROS_ERROR("Point cloud ring channel not available, please configure your point cloud data!");
+                    std::cout<<"点云中无线数信息"<<std::endl;
+                    ros::shutdown();
+                }
+            }
+
+            // check point time
+            //点的时间校验
+            if (deskewFlag == 0)
+            {
+                deskewFlag = -1;
+                for (auto &field : pl_orig_RSHelios.points)
+                {
+                    if (abs(field.timestamp - pl_orig_RSHelios.points[0].timestamp) >= 1e-6)
+                    {
+                        std::cout<<"点云中的点有时间信息"<<std::endl;
+                        deskewFlag = 1;
+                        break;
+                    }
+                }
+                if (deskewFlag == -1) //点无时间戳信息
+                {
+                    std::cout<<"点云中的点无时间信息"<<std::endl;
+                    // ROS_WARN("Point cloud timestamp not available, deskew function disabled, system will drift significantly!");
+                    
+                }
+            }
+        }
+
+        return true;
+    }
+
+    bool cacheFusePointCloud(sensor_msgs::PointCloud2 laserCloudMsg)
+    {
+
+        // cache point cloud，前面两帧点云都不处理
+        
+        cloudQueue.push_back(laserCloudMsg);
+        // std::cout<<"订阅到的输入点云帧队列大小："<<cloudQueue.size()<<std::endl;
         if (cloudQueue.size() <= 2) //点云队列中的点云帧数量小于2，直接返回
             return false;
 
@@ -324,12 +814,14 @@ public:
         else if(sensor == SensorType::RSHelios)
         {
             // Convert to Velodyne format
-            std::cout<<"RSHelios 雷达"<<std::endl;
+            // std::cout<<"RSHelios 雷达"<<std::endl;
             pcl::fromROSMsg(currentCloudMsg, pl_orig_RSHelios);
 
             pcl::PointCloud<RSHelios_ros::RsPointXYZIRT> filtered_cloud;
             for (const auto &point : pl_orig_RSHelios.points)
             {
+                // std::cout<<"ring:"<<point.ring<<",pt.timestamp="<<point.timestamp<<std::endl;
+
                 double distance = sqrt(point.x*point.x+point.y*point.y+point.z*point.z);
                 if(distance > 100 || distance < 5.0)
                 {
@@ -358,6 +850,7 @@ public:
                 dst.ring = src.ring;
                 dst.time = src.timestamp - start_stamptime;
                 // ROS_INFO("%.11f,%.6f",src.timestamp,dst.time);
+                // std::cout<<src.ring<<",dst.ring="<<dst.ring<<std::endl;
                 // std::cout<<src.timestamp<<",dst.time="<<dst.time<<std::endl;
                 // if (has_nan(pl_orig_RSHelios.points[point_id]))
                 //     continue;
@@ -378,6 +871,14 @@ public:
                 // }
                 // pl_orig.points.push_back(new_point);
             }
+                // 2. downsample new cloud (save memory)
+                pcl::PointCloud<PointXYZIRT>::Ptr laser_cloud_in_ds(new pcl::PointCloud<PointXYZIRT>());
+                static pcl::VoxelGrid<PointXYZIRT> downSizeFilter;
+                downSizeFilter.setLeafSize(0.2, 0.2, 0.1);
+                downSizeFilter.setInputCloud(laserCloudIn); //
+                downSizeFilter.filter(*laser_cloud_in_ds);
+                std::cout<<"filter before:"<<laserCloudIn->points.size()<<",after:"<<laser_cloud_in_ds->points.size()<<std::endl;
+                *laserCloudIn = *laser_cloud_in_ds;
             
         } 
         else {
