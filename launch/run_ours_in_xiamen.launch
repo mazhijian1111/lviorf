@@ -21,6 +21,9 @@
     <node pkg="tf2_ros" type="static_transform_publisher" name="map_2_odom_tf"
           args="0 0 0 0 0 0 1 map odom"/>
 
+    <node pkg="tf2_ros" type="static_transform_publisher" name="gnss_antena_2_lidar_front_right_tf"
+          args="-14.851 0.491 0 0 0 0 1 lidar2 gnss_antena"/>
+
     <!-- <node name="republish" type="republish" pkg="image_transport" 
       args="compressed in:=/m_gmsl_1/image_compressed raw out:=/camera/image_raw" /> -->
 
@@ -37,7 +40,7 @@
     <!--- lidar_fusion -->
     <!-- <include file="$(find lviorf)/launch/lidar_fusion.launch" /> -->
 
-    <rosparam command="load" file="$(find lviorf)/config/vlp_gps.yaml" />
+    <!-- <rosparam command="load" file="$(find lviorf)/config/vlp_gps.yaml" /> -->
 
     <!-- <include file="$(find lviorf)/launch/gnss_odom_calibrator.launch" /> -->
 
@@ -45,7 +48,7 @@
     <include file="$(find lviorf)/launch/include/module_loam.launch" />
 
     <!--- Robot State TF -->
-    <!-- <include file="$(find lviorf)/launch/include/module_robot_state_publisher.launch" /> -->
+    <include file="$(find lviorf)/launch/include/module_robot_state_publisher.launch" />
 
     <include file="$(find lviorf)/launch/include/module_rviz.launch" />
 

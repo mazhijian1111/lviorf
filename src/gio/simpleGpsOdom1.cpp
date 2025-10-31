@@ -53,6 +53,9 @@ private:
     std::string transformed_gps_frame_;
     std::string base_frame_;
 
+    Eigen::Matrix3d Rotation_matrix;
+    Eigen::Vector3d transform_vector;
+
 public:
     MultiOdomPublisher() : transform_computed_(false) {
         // 初始化参数
@@ -66,6 +69,7 @@ public:
         
         // 初始化变换矩阵为单位矩阵
         gps_to_laser_transform_.setIdentity();
+        Rotation_matrix.setIdentity();
         
         // 初始化发布者和订阅者
         gps_odom_sub_ = nh_.subscribe<nav_msgs::Odometry>(
@@ -153,7 +157,8 @@ private:
         // 收集时间对齐的位姿对
         std::vector<std::pair<Eigen::Isometry3d, Eigen::Isometry3d>> aligned_poses;
         
-        for (const auto& laser_odom : laser_odom_queue_) {
+        for (const auto& laser_odom : laser_odom_queue_) 
+        {
             auto gps_iter = findClosestGpsOdom(laser_odom.first);
             if (gps_iter != gps_odom_queue_.end()) {
                 double time_diff = std::abs((laser_odom.first - gps_iter->first).toSec());
@@ -190,8 +195,8 @@ private:
         }
     }
     
-    std::deque<std::pair<ros::Time, Eigen::Isometry3d>>::const_iterator 
-    findClosestGpsOdom(const ros::Time& timestamp) {
+    std::deque<std::pair<ros::Time, Eigen::Isometry3d>>::const_iterator findClosestGpsOdom(const ros::Time& timestamp) 
+    {
         if (gps_odom_queue_.empty()) {
             return gps_odom_queue_.end();
         }
@@ -256,6 +261,9 @@ private:
         transform.setIdentity();
         transform.translate(t);
         transform.rotate(R);
+
+        Rotation_matrix = R;
+        transform_vector = t;
         
         // 计算平均误差
         double avg_error = computeTransformationError(poses, transform);
@@ -281,6 +289,11 @@ private:
         Eigen::Isometry3d gps_pose = odometryToIsometry(gps_odom);
         Eigen::Isometry3d transformed_pose = gps_to_laser_transform_ * gps_pose;
         // Eigen::Isometry3d transformed_pose = gps_pose*gps_to_laser_transform_;
+
+
+
+
+
         // 创建新的里程计消息
         nav_msgs::Odometry transformed_odom;
         transformed_odom.header.stamp = gps_odom.header.stamp;

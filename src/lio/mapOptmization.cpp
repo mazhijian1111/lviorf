@@ -171,8 +171,19 @@ public:
 
     int keyframe = 0;
 
+    std::deque<nav_msgs::Odometry> lidarOdomQueue; // 保存最近一段时间内的激光里程计消息
+    std::deque<nav_msgs::Odometry> gpsOdomQueue; // 保存最近一段时间内的GPS里程计消息
+    bool is_get_yaw_between_lidar_gps = false;
+    Eigen::Matrix3d gps_to_lidar_rotation_matrix;
+
+    // 定义全局互斥锁
+    std::mutex gps_mutex;
+
     mapOptimization()
     {
+
+        gps_to_lidar_rotation_matrix.setIdentity();
+
         ISAM2Params parameters;
         parameters.relinearizeThreshold = 0.1;
         parameters.relinearizeSkip = 1;
@@ -180,7 +191,7 @@ public:
 
         pubKeyPoses                 = nh.advertise<sensor_msgs::PointCloud2>("lviorf/mapping/trajectory", 1);
         pubLaserCloudSurround       = nh.advertise<sensor_msgs::PointCloud2>("lviorf/mapping/map_global", 1);
-        pubLaserOdometryGlobal      = nh.advertise<nav_msgs::Odometry> ("lviorf/mapping/odometry", 1);
+        pubLaserOdometryGlobal      = nh.advertise<nav_msgs::Odometry> ("lviorf/mapping/odometry", 1); //后端里程计
         pubLaserOdometryIncremental = nh.advertise<nav_msgs::Odometry> ("lviorf/mapping/odometry_incremental", 1);
         pubPath                     = nh.advertise<nav_msgs::Path>("lviorf/mapping/path", 1);
         pubGPSPath                  = nh.advertise<nav_msgs::Path>("lviorf/mapping/gps_path", 1);
@@ -206,7 +217,7 @@ public:
         pubCloudRegisteredRaw = nh.advertise<sensor_msgs::PointCloud2>("lviorf/mapping/cloud_registered_raw", 1);
 
         pubSLAMInfo           = nh.advertise<lviorf::cloud_info>("lviorf/mapping/slam_info", 1);
-        pubGpsOdom            = nh.advertise<nav_msgs::Odometry> ("lviorf/mapping/gps_odom", 1);
+        pubGpsOdom            = nh.advertise<nav_msgs::Odometry> ("lviorf/mapping/gps_odom", 1); //GPS里程计
         pubCurrentPose        = nh.advertise<geometry_msgs::PoseStamped> ("/current_pose", 1);
 
         downSizeFilterSurf.setLeafSize(mappingSurfLeafSize, mappingSurfLeafSize, mappingSurfLeafSize/2);
@@ -342,17 +353,73 @@ public:
         gps_odom.pose.pose.position.x = trans_local_[0];
         gps_odom.pose.pose.position.y = trans_local_[1];
         gps_odom.pose.pose.position.z = trans_local_[2];
+        // gps_odom.pose.pose.position.x = trans_local_[1];
+        // gps_odom.pose.pose.position.y = -trans_local_[0];
+        // gps_odom.pose.pose.position.z = trans_local_[2];
+
+        // 将四元数转换为Eigen格式
+        // Eigen::Quaterniond eigen_quat(quat.w, quat.x, quat.y, quat.z);
+        tf2::Quaternion tf_quat;
+        tf_quat.setRPY(0.0, 0.0, 0.0/180.0*M_1_PI);
+        
+        Eigen::Quaterniond eigen_quat(tf_quat.w(), tf_quat.x(), tf_quat.y(), tf_quat.z());
+    
+        
+        // 计算旋转矩阵：从车体坐标系到ENU坐标系
+        Eigen::Matrix3d R_body_to_enu = eigen_quat.toRotationMatrix();
+
+            // 默认杆臂值，需要根据实际安装测量
+        Eigen::Vector3d lever_arm_ = Eigen::Vector3d(0.0, 0.0, 0.0);
+        // Eigen::Vector3d lever_arm_ = Eigen::Vector3d(-14.851, 0.0, 0.0);
+        
+        // 杆臂补偿：车体中心 = 天线位置 + R * 杆臂向量
+        Eigen::Vector3d antenna_pos(trans_local_[1], -trans_local_[0], trans_local_[2]);
+        Eigen::Vector3d body_center_pos = antenna_pos + R_body_to_enu * lever_arm_;
+
+
+        //计算激光里程计轨迹与GPS轨迹之间的固定偏差角
+        if(!is_get_yaw_between_lidar_gps)
+        {
+            // ComputeRTbetweenLidarAndGPS();
+        }
+
+        Eigen::Vector3d gps_position(trans_local_[0], trans_local_[1], trans_local_[2]);
+
+        Eigen::Vector3d gps_in_lidar_position = gps_to_lidar_rotation_matrix * gps_position;
+
+
+
         gps_odom.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 0.0, 0.0); //无姿态
-        pubGpsOdom.publish(gps_odom);
+        pubGpsOdom.publish(gps_odom); //发布GPS里程计
+        
+        // 锁定互斥锁
+        gps_mutex.lock();
         gpsQueue.push_back(gps_odom);
+        // 解锁互斥锁
+        gps_mutex.unlock();
+
+        gpsOdomQueue.push_back(gps_odom);
+        if(gpsOdomQueue.size()>1000)
+        {
+            gpsOdomQueue.pop_front();
+        }
         // std::cout<<"gpsQueue.size = "<<gpsQueue.size()<<std::endl;
 
         geometry_msgs::PoseStamped pose_stamped;
         pose_stamped.header.stamp = gpsMsg->header.stamp;
         pose_stamped.header.frame_id = odometryFrame;
-        pose_stamped.pose.position.x = trans_local_[0];
-        pose_stamped.pose.position.y = trans_local_[1];
-        pose_stamped.pose.position.z = trans_local_[2];
+        // pose_stamped.pose.position.x = trans_local_[0]; //E
+        // pose_stamped.pose.position.y = trans_local_[1]; //N
+        // pose_stamped.pose.position.z = trans_local_[2]; //U
+        // pose_stamped.pose.position.x = trans_local_[1]; //N
+        // pose_stamped.pose.position.y = -trans_local_[0]; //E
+        // pose_stamped.pose.position.z = trans_local_[2]; //U
+        
+            pose_stamped.pose.position.x = gps_in_lidar_position.x(); //N
+            pose_stamped.pose.position.y = gps_in_lidar_position.y(); //E
+            pose_stamped.pose.position.z = gps_in_lidar_position.z(); //U
+        
+
         pose_stamped.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 0.0, 0.0);
 
         GPSPath.poses.push_back(pose_stamped);
@@ -370,6 +437,87 @@ public:
     void gpsOdomHandler(const nav_msgs::OdometryConstPtr& gpsOdomMsg)
     {
         gpsQueueOdom.push_back(*gpsOdomMsg);
+    }
+
+    void ComputeRTbetweenLidarAndGPS()
+    {
+        // std::cout<<"gpsOdomQueue size: "<<gpsOdomQueue.size()<<",lidarOdomQueue size:"<<lidarOdomQueue.size()<<std::endl;
+        if(gpsOdomQueue.size() < 2 || lidarOdomQueue.size() < 2 || is_get_yaw_between_lidar_gps)
+        return;
+        
+        std::vector<std::pair<nav_msgs::Odometry, nav_msgs::Odometry>> aligned_poses;
+        for (const auto& laser_odom : lidarOdomQueue) 
+        {
+            int index =-1;
+            double min_time_diff = abs(laser_odom.header.stamp.toSec() - gpsOdomQueue[0].header.stamp.toSec());
+            for(int i = 0;i < gpsOdomQueue.size();i++)
+            {
+                double time_diff = abs(laser_odom.header.stamp.toSec() - gpsOdomQueue[i].header.stamp.toSec());
+                if(time_diff<min_time_diff)
+                {
+                    index =i;
+                    min_time_diff = time_diff;
+                }
+
+            }
+            if(min_time_diff<0.1&&index>=0)
+            {
+                aligned_poses.emplace_back(laser_odom,gpsOdomQueue[index]);
+            }
+
+            if(aligned_poses.size()>20)
+            {
+                break;
+            }
+        }
+
+        if(aligned_poses.size()>10)
+        {
+            Eigen::Vector3d gps_position_0(aligned_poses[0].second.pose.pose.position.x,aligned_poses[0].second.pose.pose.position.y,aligned_poses[0].second.pose.pose.position.z);
+            Eigen::Vector3d lidar_position_0(aligned_poses[0].first.pose.pose.position.x,aligned_poses[0].first.pose.pose.position.y,aligned_poses[0].first.pose.pose.position.z);
+            
+            double gps_x=0.0,gps_y=0.0,gps_z=0.0;
+            double lidar_x=0.0,lidar_y=0.0,lidar_z=0.0;
+            for(const auto& pose_pair : aligned_poses)
+            {
+                gps_x+=pose_pair.second.pose.pose.position.x;
+                gps_y+=pose_pair.second.pose.pose.position.y;
+                gps_z+=pose_pair.second.pose.pose.position.z;
+                lidar_x+=pose_pair.first.pose.pose.position.x;
+                lidar_y+=pose_pair.first.pose.pose.position.y;
+                lidar_z+=pose_pair.first.pose.pose.position.z;             
+            }
+            gps_x/=aligned_poses.size();
+            gps_y/=aligned_poses.size();
+            gps_z/=aligned_poses.size();
+            lidar_x/=aligned_poses.size();
+            lidar_y/=aligned_poses.size();
+            lidar_z/=aligned_poses.size();
+
+            Eigen::Vector3d lidar_position_1(lidar_x,lidar_y,0.0);
+            Eigen::Vector3d gps_position_1(gps_x,gps_y,0.0);
+
+            Eigen::Vector3d gps_position_diff = gps_position_1 - gps_position_0;
+            Eigen::Vector3d lidar_position_diff = lidar_position_1 - lidar_position_0;
+
+            double yaw = std::acos(gps_position_diff.dot(lidar_position_diff) / (gps_position_diff.norm() * lidar_position_diff.norm()));
+            std::cout<<"the yaw between lidar and gps is: "<<yaw<<" rad."<<std::endl; 
+
+
+
+            // 定义欧拉角（以弧度为单位）
+            double roll = 0.0;   // 绕x轴旋转
+            double pitch = 0.0;  // 绕y轴旋转
+            double dis_yaw = 0.0;  // 绕z轴旋转
+            // 将欧拉角转换为旋转矩阵
+            gps_to_lidar_rotation_matrix = Eigen::AngleAxisd(-yaw-M_1_PI/2, Eigen::Vector3d::UnitZ()) *
+                            Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) *
+                            Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX());
+
+            is_get_yaw_between_lidar_gps = true;
+
+        }
+
     }
 
     //将点经过位姿变换，变换到map系下
@@ -1167,31 +1315,32 @@ public:
                 //去掉时间较远的邻近帧
         for(int i = 0; i < surroundingKeyPosesDS->size(); i++)
         {
-            int index = -1; 
-            double dis0 = sqrt(pow(surroundingKeyPosesDS->points[i].x-cloudKeyPoses3D->points[0].x,2)+
-                                    pow(surroundingKeyPosesDS->points[i].y-cloudKeyPoses3D->points[0].y,2)+
-                                    pow(surroundingKeyPosesDS->points[i].z-cloudKeyPoses3D->points[0].z,2));
-            for(int j = 0;j < cloudKeyPoses3D->size();j++)
-            {
-                double dis = sqrt(pow(surroundingKeyPosesDS->points[i].x-cloudKeyPoses3D->points[j].x,2)+
-                                    pow(surroundingKeyPosesDS->points[i].y-cloudKeyPoses3D->points[j].y,2)+
-                                    pow(surroundingKeyPosesDS->points[i].z-cloudKeyPoses3D->points[j].z,2));
-                if(dis <= dis0)
-                {
-                    index = j;
-                    dis0 = dis;
-                }
-            }
-            if (timeLaserInfoCur - cloudKeyPoses6D->points[index].time < 60.0) //60.0s内的帧作为关键帧
-                    surroundingKeyPosesDSRemoveFarTime->push_back(surroundingKeyPosesDS->points[i]); 
+            // int index = -1; 
+            // double dis0 = sqrt(pow(surroundingKeyPosesDS->points[i].x-cloudKeyPoses3D->points[0].x,2)+
+            //                         pow(surroundingKeyPosesDS->points[i].y-cloudKeyPoses3D->points[0].y,2)+
+            //                         pow(surroundingKeyPosesDS->points[i].z-cloudKeyPoses3D->points[0].z,2));
+            // for(int j = 0;j < cloudKeyPoses3D->size();j++)
+            // {
+            //     double dis = sqrt(pow(surroundingKeyPosesDS->points[i].x-cloudKeyPoses3D->points[j].x,2)+
+            //                         pow(surroundingKeyPosesDS->points[i].y-cloudKeyPoses3D->points[j].y,2)+
+            //                         pow(surroundingKeyPosesDS->points[i].z-cloudKeyPoses3D->points[j].z,2));
+            //     if(dis <= dis0)
+            //     {
+            //         index = j;
+            //         dis0 = dis;
+            //     }
+            // }
+            // if (timeLaserInfoCur - cloudKeyPoses6D->points[index].time < 60.0) //60.0s内的帧作为关键帧
+            //         surroundingKeyPosesDSRemoveFarTime->push_back(surroundingKeyPosesDS->points[i]); 
 
+            surroundingKeyPosesDSRemoveFarTime->push_back(surroundingKeyPosesDS->points[i]); 
         }
 
         // also extract some latest key frames in case the robot rotates in one position
         int numPoses = cloudKeyPoses3D->size();
         for (int i = numPoses-1; i >= 0; --i)
         {
-            if (timeLaserInfoCur - cloudKeyPoses6D->points[i].time < 5.0) //5.0s内的帧也作为关键帧
+            if (timeLaserInfoCur - cloudKeyPoses6D->points[i].time < 3.0) //3.0s内的帧也作为关键帧
                 // surroundingKeyPosesDS->push_back(cloudKeyPoses3D->points[i]);
                 surroundingKeyPosesDSRemoveFarTime->push_back(cloudKeyPoses3D->points[i]);
             else
@@ -1317,14 +1466,14 @@ public:
             // 5: 要搜索的最近邻点数量
             // pointSearchInd: 输出，最近邻点的索引
             // pointSearchSqDis: 输出，到最近邻点的平方距离
-            kdtreeSurfFromMap->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
+            kdtreeSurfFromMap->nearestKSearch(pointSel, 7, pointSearchInd, pointSearchSqDis);
 
             // 定义矩阵用于平面拟合：
             // matA0: 5x3矩阵，存储5个最近邻点的坐标
             // matB0: 5x1矩阵，全部填充为-1，用于平面方程求解
             // matX0: 3x1向量，存储平面方程系数
-            Eigen::Matrix<float, 5, 3> matA0;
-            Eigen::Matrix<float, 5, 1> matB0;
+            Eigen::Matrix<float, 7, 3> matA0;
+            Eigen::Matrix<float, 7, 1> matB0;
             Eigen::Vector3f matX0;
 
             // 初始化矩阵
@@ -1334,8 +1483,8 @@ public:
 
             // 检查第5个最近邻点的距离是否小于1.0米
             // 如果距离太大，说明点太稀疏，不适合进行平面拟合
-            if (pointSearchSqDis[4] < 1.0) {
-                for (int j = 0; j < 5; j++) {// 构建矩阵A：将5个最近邻点的坐标填入matA0
+            if (pointSearchSqDis[6] < 1.0) {
+                for (int j = 0; j < 7; j++) {// 构建矩阵A：将5个最近邻点的坐标填入matA0
                     matA0(j, 0) = laserCloudSurfFromMapDS->points[pointSearchInd[j]].x;
                     matA0(j, 1) = laserCloudSurfFromMapDS->points[pointSearchInd[j]].y;
                     matA0(j, 2) = laserCloudSurfFromMapDS->points[pointSearchInd[j]].z;
@@ -1360,7 +1509,7 @@ public:
                 bool planeValid = true;
                 // 计算每个最近邻点到拟合平面的距离,
                 // 平面方程：pa*x + pb*y + pc*z + pd = 0
-                for (int j = 0; j < 5; j++) {
+                for (int j = 0; j < 7; j++) {
                     // 如果任何一个点的距离大于0.2米，认为平面拟合不准确
                     if (fabs(pa * laserCloudSurfFromMapDS->points[pointSearchInd[j]].x +
                              pb * laserCloudSurfFromMapDS->points[pointSearchInd[j]].y +
@@ -1444,7 +1593,7 @@ public:
         //当前激光帧中能与局部地图拟合出平面的点云数量
         int laserCloudSelNum = laserCloudOri->size();
         // 如果有效特征点太少（少于50个），不足以进行可靠的优化，返回失败
-        if (laserCloudSelNum < 50) {
+        if (laserCloudSelNum < 30) {
             return false;
         }
 
@@ -1756,35 +1905,36 @@ public:
     //在上一帧与当前帧之间添加激光里程计因子
     void addOdomFactor()
     {
+        std::cout<<"start add lio factor!"<<std::endl;
         if (cloudKeyPoses3D->points.empty())
         {
             noiseModel::Diagonal::shared_ptr priorNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-2, 1e-2, M_PI*M_PI, 1e8, 1e8, 1e8).finished()); // rad*rad, meter*meter
             gtSAMgraph.add(PriorFactor<Pose3>(0, trans2gtsamPose(transformTobeMapped), priorNoise));
-            // if (initialEstimate.exists(0)) {
-            // // 键已存在，更新值而不是插入
-            // initialEstimate.update(0, trans2gtsamPose(transformTobeMapped));
-            // std::cout << "Updated existing key: " << cloudKeyPoses3D->size() << std::endl;
-            // } else {
-            //     // 键不存在，插入新值
-            //     initialEstimate.insert(0, trans2gtsamPose(transformTobeMapped));
-            //     std::cout << "Inserted new key: " << cloudKeyPoses3D->size() << std::endl;
-            // }
-            initialEstimate.insert(0, trans2gtsamPose(transformTobeMapped));
+            if (initialEstimate.exists(0)) {
+            // 键已存在，更新值而不是插入
+            initialEstimate.update(0, trans2gtsamPose(transformTobeMapped));
+            std::cout << "Updated existing initial key: " << cloudKeyPoses3D->size() << std::endl;
+            } else {
+                // 键不存在，插入新值
+                initialEstimate.insert(0, trans2gtsamPose(transformTobeMapped));
+                std::cout << "Inserted initial key: " << cloudKeyPoses3D->size() << std::endl;
+            }
+            // initialEstimate.insert(0, trans2gtsamPose(transformTobeMapped));
         }else{
             noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
             gtsam::Pose3 poseFrom = pclPointTogtsamPose3(cloudKeyPoses6D->points.back()); //上一帧
             gtsam::Pose3 poseTo   = trans2gtsamPose(transformTobeMapped); //当前帧估计
             gtSAMgraph.add(BetweenFactor<Pose3>(cloudKeyPoses3D->size()-1, cloudKeyPoses3D->size(), poseFrom.between(poseTo), odometryNoise));
-            // if (initialEstimate.exists(cloudKeyPoses3D->size())) {
-            // // 键已存在，更新值而不是插入
-            // initialEstimate.update(cloudKeyPoses3D->size(), poseTo);
-            // std::cout << "Updated existing key: " << cloudKeyPoses3D->size() << std::endl;
-            // } else {
-            //     // 键不存在，插入新值
-            //     initialEstimate.insert(cloudKeyPoses3D->size(), poseTo);
-            //     std::cout << "Inserted new key: " << cloudKeyPoses3D->size() << std::endl;
-            // }
-            initialEstimate.insert(cloudKeyPoses3D->size(), poseTo);
+            if (initialEstimate.exists(cloudKeyPoses3D->size())) {
+            // 键已存在，更新值而不是插入
+            initialEstimate.update(cloudKeyPoses3D->size(), poseTo);
+            std::cout << "Updated existing key: " << cloudKeyPoses3D->size() << std::endl;
+            } else {
+                // 键不存在，插入新值
+                initialEstimate.insert(cloudKeyPoses3D->size(), poseTo);
+                std::cout << "Inserted new key: " << cloudKeyPoses3D->size() << std::endl;
+            }
+            // initialEstimate.insert(cloudKeyPoses3D->size(), poseTo);
             std::cout<<"add lio factor"<<std::endl;
         }
     }
@@ -1985,17 +2135,20 @@ public:
 
     void addGPSFactor()
     {
+        std::cout<<"start add GPS factor!"<<std::endl;
+        std::cout<<"gpsQueue.size = "<<gpsQueue.size()<<std::endl;
         if (gpsQueue.empty())
             return;
-
+        // if(cloudKeyPoses3D->size() <= 0)
+        //     return;
         // wait for system initialized and settles down
-        if (cloudKeyPoses3D->points.empty())
-            return;
-        else
-        {
-            // if (common_lib_->pointDistance(cloudKeyPoses3D->front(), cloudKeyPoses3D->back()) < 5.0)
-            //     return;
-        }
+        // if (cloudKeyPoses3D->points.empty())
+        //     return;
+        // else
+        // {
+        //     // if (common_lib_->pointDistance(cloudKeyPoses3D->front(), cloudKeyPoses3D->back()) < 5.0)
+        //     //     return;
+        // }
 
         // pose covariance small, no need to correct
         // if (poseCovariance(3,3) < poseCovThreshold && poseCovariance(4,4) < poseCovThreshold)
@@ -2006,7 +2159,7 @@ public:
 
         while (!gpsQueue.empty())
         {
-            if (gpsQueue.front().header.stamp.toSec() < timeLaserInfoCur - 0.01)
+            if (gpsQueue.front().header.stamp.toSec() < timeLaserInfoCur - 0.2)
             {
                 // message too old
                 gpsQueue.pop_front();
@@ -2015,11 +2168,47 @@ public:
             {
                 // message too new
                 break;
-            }
-            else
+            }else if(abs(gpsQueue.front().header.stamp.toSec() - timeLaserInfoCur) < 0.2)
             {
+                break;
+            }
+            // std::cout<<"00"<<std::endl;
+        }
+            // else
+            // {
+                if (gpsQueue.empty())
+                    return;
+                std::cout<<"11"<<std::endl;
                 nav_msgs::Odometry thisGPS = gpsQueue.front();
-                gpsQueue.pop_front();
+                // gpsQueue.pop_front();
+
+            double minTimeDiff = abs(gpsQueue[0].header.stamp.toSec() - timeLaserInfoCur);
+            int minIndex = -1;
+            for (int i = 0; i < (int)gpsQueue.size(); ++i)
+            {
+                // std::cout<<setprecision(15)<<"gpsQueueOdom:"<<gpsQueueOdom[i].header.stamp.toSec()<<",lidattime:"<<CurrLaserTime<<std::endl;
+                double timeDiff = abs(gpsQueue[i].header.stamp.toSec() - timeLaserInfoCur);
+                if (timeDiff < minTimeDiff)
+                {
+                    minTimeDiff = timeDiff;
+                    minIndex = i;
+                }
+            }
+            
+            std::cout<<"minIndex:"<<minIndex<<",minTimeDiff:"<<minTimeDiff<<std::endl;
+            if (minIndex == -1 || minTimeDiff > 0.1)
+            {
+                return;
+            }else{
+                thisGPS = gpsQueue[minIndex];
+            }
+
+                // if(abs(thisGPS.header.stamp.toSec() - timeLaserInfoCur) > 0.1)
+                // {
+                //     return;
+                // }
+
+                // std::cout<<"22"<<std::endl;
 
                 // GPS too noisy, skip
                 float noise_x = thisGPS.pose.covariance[0];
@@ -2038,8 +2227,8 @@ public:
                 }
 
                 // GPS not properly initialized (0,0,0)
-                if (abs(gps_x) < 1e-6 && abs(gps_y) < 1e-6)
-                    continue;
+                // if (abs(gps_x) < 1e-6 && abs(gps_y) < 1e-6)
+                //     continue;
 
                 // Add GPS every a few meters
                 PointType curGPSPoint;
@@ -2055,16 +2244,18 @@ public:
                 
 
                 gtsam::Vector Vector3(3);
-                Vector3 << max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f);
+                Vector3 << max(noise_x, 0.5f), max(noise_y, 0.5f), max(noise_z, 0.5f);
                 noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
-                gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
+                gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, 0.0), gps_noise);
                 gtSAMgraph.add(gps_factor);
+                // initialEstimate.insert(cloudKeyPoses3D->size(), gtsam::Pose3(gtsam::Rot3::RzRyRx(transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]), 
+                //                   gtsam::Point3(gps_x, gps_y, 0.0)));
 
                 std::cout<<"add GPS factor"<<std::endl;
-                aLoopIsClosed = true;
-                break;
-            }
-        }
+                // aLoopIsClosed = true;
+                // break;
+            // }
+        // }
     }
 
     void addLoopFactor()
@@ -2098,6 +2289,12 @@ public:
         // std::cout<<"当前激光帧为关键帧"<<std::endl;
         cout << "*************************Begin backend optimization***************************" << endl;
         std::cout<<"keyframe:"<<keyframe<<std::endl;
+
+        //*********20251027修改，将GPS作为每帧估计的初始值**********//--不可行
+        // gps factor
+        // addGPSFactor();
+
+        //******************************************************//
 
         // lio odom factor
         addOdomFactor();
@@ -2303,6 +2500,11 @@ public:
         laserOdometryROS.pose.pose.position.z = transformTobeMapped[5];
         laserOdometryROS.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
         pubLaserOdometryGlobal.publish(laserOdometryROS);
+        lidarOdomQueue.push_back(laserOdometryROS);
+        if(lidarOdomQueue.size()>1000)
+        {
+            lidarOdomQueue.pop_front();
+        }
         
         // Publish TF
         static tf::TransformBroadcaster br;

@@ -110,13 +110,19 @@ void readParameters(ros::NodeHandle &n)
 
         lidar_to_camera_transform = lidar_to_imu_transform * imu_to_camera_transform;
 
-        std::cout<<"lidar_to_imu_transform:"<<lidar_to_imu_transform.getOrigin()<<std::endl;
+        //设置雷达到相机的外参：
+        lidar_to_camera_transform.setOrigin(tf::Vector3(-0.2791267790, 1.3369022166, 0.0230183789));
+        tf::Quaternion quat(-0.5166896561, 0.4782834622, -0.4766208619, 0.5264118350);  // x, y, z, w components
+        lidar_to_camera_transform.setRotation(quat);
+
+
+        std::cout<<"lidar_to_imu_transform:"<<std::endl;
         std::cout<<lidar_to_imu_transform.getOrigin().x()<<","<<lidar_to_imu_transform.getOrigin().y()<<","<<lidar_to_imu_transform.getOrigin().z()<<std::endl;
 
-        std::cout<<"imu_to_camera_transform:"<<imu_to_camera_transform.getOrigin()<<std::endl;
+        std::cout<<"imu_to_camera_transform:"<<std::endl;
         std::cout<<imu_to_camera_transform.getOrigin().x()<<","<<imu_to_camera_transform.getOrigin().y()<<","<<imu_to_camera_transform.getOrigin().z()<<std::endl;
         
-        std::cout<<"lidar_to_camera_transform:"<<lidar_to_camera_transform.getOrigin()<<std::endl;
+        std::cout<<"lidar_to_camera_transform:"<<std::endl;
         std::cout<<lidar_to_camera_transform.getOrigin().x()<<","<<lidar_to_camera_transform.getOrigin().y()<<","<<lidar_to_camera_transform.getOrigin().z()<<std::endl;
     }
 
