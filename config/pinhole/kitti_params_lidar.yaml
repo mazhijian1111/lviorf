@@ -9,6 +9,9 @@ lviorf:
   gpsTopic: "/gps/fix/correct"               # GPS odometry topic from navsat, see module_navsat.launch file
   # gpsTopic: "/gps/fix11"  
 
+  #GPS status
+  GPS_STATUS: 0     #kitti.bag包中，正常状态为0(固定解)
+
   # Frames
   lidarFrame: "base_link"
   baselinkFrame: "base_link"

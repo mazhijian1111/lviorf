@@ -177,7 +177,7 @@ Visualization Manager:
           Topic: /lviorf/mapping/odometry
           Unreliable: false
           Value: false
-      Enabled: true
+      Enabled: false
       Name: Odometry
     - Class: rviz/Group
       Displays:
@@ -410,8 +410,7 @@ Visualization Manager:
               Marker Topic: /lviorf/mapping/loop_closure_constraints
               Name: Loop constraint
               Namespaces:
-                loop_edges: true
-                loop_nodes: true
+                {}
               Queue Size: 100
               Value: true
           Enabled: true
@@ -560,6 +559,30 @@ Visualization Manager:
           Name: VIO
       Enabled: true
       Name: Mapping
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 25; 255; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Queue Size: 10
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic: /lviorf/mapping/gps_path
+      Unreliable: false
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
@@ -576,7 +599,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 515.1207275390625
+      Distance: 93.60215759277344
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -584,9 +607,9 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 11.834354400634766
-        Y: -216.19419860839844
-        Z: -10.906978607177734
+        X: -3.1520276069641113
+        Y: 4.2509307861328125
+        Z: -10.687795639038086
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -612,7 +635,7 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 1848
-  X: 1992
+  X: 2632
   Y: 27
   depth_image:
     collapsed: false

@@ -762,11 +762,11 @@ public:
             if (rowIdn < 0 || rowIdn >= N_SCAN)
                 continue;
 
-            if (rowIdn % downsampleRate != 0)
-                continue;
+            // if (rowIdn % downsampleRate != 0)
+            //     continue;
 
-            if (i % point_filter_num != 0)
-                continue;
+            // if (i % point_filter_num != 0)
+            //     continue;
 
             //对单个点云进行了坐标变换，默认了同一帧的两个点之间的位置平移为0，只进行了旋转（取的是IMU旋转）
             thisPoint = deskewPoint(&thisPoint, laserCloudIn->points[i].time);

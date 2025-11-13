@@ -81,6 +81,8 @@ public:
     ros::Publisher pubGpsOdom;
     ros::Publisher pubCurrentPose;
 
+    ros::Publisher pubGpsPath;
+
     ros::Subscriber subCloud;
     ros::Subscriber subGPS;
     ros::Subscriber subGPSOdom;
@@ -160,6 +162,13 @@ public:
     PointType lastGPSPoint; //上一激光帧最近的的GPS位姿
     bool firstGPSPoint = false;
 
+
+    nav_msgs::Path Gpspath;
+
+    //滤波使用
+    std::deque<sensor_msgs::NavSatFix> nav_sat_fix_msg_deque;
+    nav_msgs::Path GPSPath;
+
     mapOptimization()
     {
         ISAM2Params parameters;
@@ -172,6 +181,7 @@ public:
         pubLaserOdometryGlobal      = nh.advertise<nav_msgs::Odometry> ("lviorf/mapping/odometry", 1);
         pubLaserOdometryIncremental = nh.advertise<nav_msgs::Odometry> ("lviorf/mapping/odometry_incremental", 1);
         pubPath                     = nh.advertise<nav_msgs::Path>("lviorf/mapping/path", 1);
+        pubGpsPath                 = nh.advertise<nav_msgs::Path>("lviorf/mapping/gps_path",1);
 
         subCloud = nh.subscribe<lviorf::cloud_info>("lviorf/deskew/cloud_info", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());
         subGPS   = nh.subscribe<sensor_msgs::NavSatFix> (gpsTopic, 200, &mapOptimization::gpsHandler, this, ros::TransportHints().tcpNoDelay());
@@ -287,7 +297,8 @@ public:
 
     void gpsHandler(const sensor_msgs::NavSatFixConstPtr& gpsMsg)
     {
-        if (gpsMsg->status.status != 0)
+        // std::cout<<"gpsHandler,status:"<<gpsStatus<<std::endl;
+        if (gpsMsg->status.status != gpsStatus )
             return;
 
         Eigen::Vector3d trans_local_;
@@ -298,6 +309,23 @@ public:
             std::cout<<"GPS init: "<<gpsMsg->latitude<<" "<<gpsMsg->longitude<<" "<<gpsMsg->altitude<<std::endl;
         }
 
+        //增加GPS滤波机制
+        nav_sat_fix_msg_deque.push_back(*gpsMsg);
+        if(nav_sat_fix_msg_deque.size() >= 2)
+        {
+            double d1 = nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-1].altitude - nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-2].altitude;
+            double d2 = nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-1].longitude - nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-2].longitude;
+            double d3 = nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-1].latitude - nav_sat_fix_msg_deque[nav_sat_fix_msg_deque.size()-2].latitude;
+            if(abs(d1) >= 0.5 || abs(d2) >= 0.01 || abs(d3) >= 0.01)
+            {
+                // std::cout<<"GPS跳变"<<std::endl;
+                nav_sat_fix_msg_deque.pop_back();
+                return;
+            }
+            nav_sat_fix_msg_deque.pop_front();
+        }
+
+
         gps_trans_.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, trans_local_[0], trans_local_[1], trans_local_[2]);
 
         nav_msgs::Odometry gps_odom;
@@ -305,10 +333,32 @@ public:
         gps_odom.header.frame_id = "map";
         gps_odom.pose.pose.position.x = trans_local_[0];
         gps_odom.pose.pose.position.y = trans_local_[1];
-        gps_odom.pose.pose.position.z = trans_local_[2];
+        gps_odom.pose.pose.position.z = 0.0;
         gps_odom.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0.0, 0.0, 0.0); //无姿态
         pubGpsOdom.publish(gps_odom);
         gpsQueue.push_back(gps_odom);
+
+
+        geometry_msgs::PoseStamped pose_stamped;
+        pose_stamped.header.stamp = gpsMsg->header.stamp;
+        pose_stamped.header.frame_id = "map";
+        pose_stamped.pose.position.x = trans_local_[0];
+        pose_stamped.pose.position.y = trans_local_[1];
+        pose_stamped.pose.position.z = 0.0;
+        pose_stamped.pose.orientation.x = 0;
+        pose_stamped.pose.orientation.y = 0;
+        pose_stamped.pose.orientation.z = 0;
+        pose_stamped.pose.orientation.w = 1;
+
+        Gpspath.poses.push_back(pose_stamped);
+        // std::cout<<"Gpspath.size="<<Gpspath.poses.size()<<std::endl;
+
+        // if(Gpspath.poses.size()%20 == 0)
+        {
+            Gpspath.header.stamp = gpsMsg->header.stamp;
+            Gpspath.header.frame_id = "map";
+            pubGpsPath.publish(Gpspath);
+        }
     }
 
 
@@ -1496,6 +1546,7 @@ public:
             gtSAMgraph.add(PriorFactor<Pose3>(0, trans2gtsamPose(transformTobeMapped), priorNoise));
             initialEstimate.insert(0, trans2gtsamPose(transformTobeMapped));
         }else{
+            ROS_INFO("add lio factor");
             noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
             gtsam::Pose3 poseFrom = pclPointTogtsamPose3(cloudKeyPoses6D->points.back()); //上一帧
             gtsam::Pose3 poseTo   = trans2gtsamPose(transformTobeMapped); //当前帧估计
@@ -1536,7 +1587,7 @@ public:
                         // initialEstimate.insert(0, vio_pose);
                         // index_for_vio_factor = cloudKeyPoses3D->size();
                     }else{
-                        // ROS_INFO("add vio factor");
+                        ROS_INFO("add vio factor");
                         noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-1, 1e-1, 1e-1, 1e-1, 1e-1, 1e-1).finished());
                         gtsam::Pose3 poseFrom = vio_pose_last; //上一帧视觉估计位姿
                         gtsam::Pose3 poseTo   = vio_pose; //当前帧视觉估计
@@ -1693,6 +1744,7 @@ public:
         {
             if (common_lib_->pointDistance(cloudKeyPoses3D->front(), cloudKeyPoses3D->back()) < 5.0)
                 return;
+
         }
 
         // pose covariance small, no need to correct
@@ -1778,6 +1830,7 @@ public:
             gtsam::noiseModel::Diagonal::shared_ptr noiseBetween = loopNoiseQueue[i];
             gtSAMgraph.add(BetweenFactor<Pose3>(indexFrom, indexTo, poseBetween, noiseBetween));
         }
+        ROS_INFO("add loop factor");
 
         loopIndexQueue.clear();
         loopPoseQueue.clear();
