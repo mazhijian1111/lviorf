@@ -40,7 +40,8 @@ find_package(Boost REQUIRED COMPONENTS timer)
 # find_package(GeographicLib REQUIRED)
 
 # 包含GeographicLib的头文件路径
-include_directories("../third_party/GeographicLib")
+# include_directories("third_party/GeographicLib")
+# find_package(GeographicLib REQUIRED)
 
 add_message_files(
   DIRECTORY msg
